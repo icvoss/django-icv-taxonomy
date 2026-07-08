@@ -9,6 +9,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Squashed migration `0001_squashed_0003_alter_term_vocabulary_alter_termassociation_term_and_more` replacing 0001 to 0003. Existing
+  databases that applied the original series are unaffected (Django
+  no-ops through the `replaces` list); fresh installs apply the single
+  squashed migration. The replaced originals remain in the package and
+  will be removed in the next major release once all installations have
+  passed the squash point.
+
 ## [0.4.0] — 2026-06-24
 
 ### Added
