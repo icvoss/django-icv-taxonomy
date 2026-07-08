@@ -1,6 +1,6 @@
 # django-icv-taxonomy
 
-[![CI](https://github.com/nigelcopley/django-icv-taxonomy/actions/workflows/ci.yml/badge.svg)](https://github.com/nigelcopley/django-icv-taxonomy/actions/workflows/ci.yml)
+[![CI](https://github.com/icvoss/django-icv-taxonomy/actions/workflows/ci.yml/badge.svg)](https://github.com/icvoss/django-icv-taxonomy/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/django-icv-taxonomy.svg)](https://pypi.org/project/django-icv-taxonomy/)
 [![Python versions](https://img.shields.io/pypi/pyversions/django-icv-taxonomy.svg)](https://pypi.org/project/django-icv-taxonomy/)
 [![Django versions](https://img.shields.io/pypi/djversions/django-icv-taxonomy.svg)](https://pypi.org/project/django-icv-taxonomy/)
@@ -14,7 +14,7 @@ Cross-domain taxonomy, vocabularies, and tagging for Django — hierarchical and
 
 Most Django projects invent their own tagging and categorisation from scratch. The result is a different pattern per app: one uses a `CharField`, another a flat M2M, a third builds a category tree — and none of them talk to each other.
 
-django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents "Genres", another represents "Topics", another "Tags". Any model in any app can be associated with terms from any vocabulary, via a single generic association table or a typed M2M join table for high-throughput paths. Term hierarchies are powered by [django-icv-tree](https://github.com/nigelcopley/django-icv-tree) (materialised-path trees), which makes ancestor/descendant queries fast without recursive SQL.
+django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents "Genres", another represents "Topics", another "Tags". Any model in any app can be associated with terms from any vocabulary, via a single generic association table or a typed M2M join table for high-throughput paths. Term hierarchies are powered by [django-icv-tree](https://github.com/icvoss/django-icv-tree) (materialised-path trees), which makes ancestor/descendant queries fast without recursive SQL.
 
 ---
 
@@ -75,12 +75,12 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 
 - Python 3.11+
 - Django 5.1+
-- [django-icv-tree](https://github.com/nigelcopley/django-icv-tree) >= 0.2.0
+- [django-icv-tree](https://github.com/icvoss/django-icv-tree) >= 0.2.0
 - `django.contrib.contenttypes` (for generic tagging)
 
 Optional:
 
-- [django-icv-core](https://github.com/nigelcopley/django-icv-core) — adds UUID primary keys and `created_at`/`updated_at` timestamps to vocabulary and term models
+- [django-icv-core](https://github.com/icvoss/django-icv-core) — adds UUID primary keys and `created_at`/`updated_at` timestamps to vocabulary and term models
 
 ---
 

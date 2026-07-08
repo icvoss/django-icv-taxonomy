@@ -16,7 +16,7 @@ Practical guide for contributors working on this package.
 ## Local Development Setup
 
 ```bash
-git clone https://github.com/nigelcopley/django-icv-taxonomy.git
+git clone https://github.com/icvoss/django-icv-taxonomy.git
 cd django-icv-taxonomy
 
 # Create a virtual environment

@@ -46,11 +46,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/nigelcopley/django-icv-taxonomy"
-Documentation = "https://github.com/nigelcopley/django-icv-taxonomy"
-Changelog = "https://github.com/nigelcopley/django-icv-taxonomy/blob/main/CHANGELOG.md"
-"Issue Tracker" = "https://github.com/nigelcopley/django-icv-taxonomy/issues"
-"Source Code" = "https://github.com/nigelcopley/django-icv-taxonomy"
+Homepage = "https://github.com/icvoss/django-icv-taxonomy"
+Documentation = "https://github.com/icvoss/django-icv-taxonomy"
+Changelog = "https://github.com/icvoss/django-icv-taxonomy/blob/main/CHANGELOG.md"
+"Issue Tracker" = "https://github.com/icvoss/django-icv-taxonomy/issues"
+"Source Code" = "https://github.com/icvoss/django-icv-taxonomy"
 
 [tool.setuptools.packages.find]
 where = ["src"]
