@@ -45,7 +45,7 @@ OIDC trusted publishing (no token required), and creates a GitHub release.
 
 ## Tag format (strict)
 
-`v<semver>` — the literal `v` prefix, then the version. No package prefix.
+`v<semver>`: the literal `v` prefix, then the version. No package prefix.
 
 Examples: `v0.4.0`, `v0.5.0`, `v1.0.0`.
 
@@ -117,7 +117,7 @@ Before pushing the tag (the irreversible step):
 ## If something goes wrong
 
 - **PyPI rejects the upload (version exists).** That version is permanently
-  taken — you cannot re-upload, even after deleting. Bump to the next patch and
+  taken; you cannot re-upload, even after deleting. Bump to the next patch and
   re-tag.
 - **The test/build job fails after tagging.** Nothing was published (publish is
   the last job and depends on test + build). Fix on a new PR, merge, delete the

@@ -113,7 +113,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 | `chore` | Maintenance, version bumps, dependency updates |
 | `docs` | Documentation only |
 | `test` | Adding or updating tests |
-| `style` | Formatting, whitespace — no logic change |
+| `style` | Formatting, whitespace; no logic change |
 | `refactor` | Code change that is neither a fix nor a feature |
 
 Scope is optional; use `taxonomy` if in doubt.
@@ -130,7 +130,7 @@ before merging. Prefer small, focused commits over large ones.
 See [RELEASING.md](RELEASING.md) for the full release process. In brief:
 
 1. Bump the version in `pyproject.toml` and `src/icv_taxonomy/__init__.py`.
-2. Update `CHANGELOG.md` — rename `[Unreleased]` to `[<version>] - <date>`.
+2. Update `CHANGELOG.md`: rename `[Unreleased]` to `[<version>] - <date>`.
 3. Open a PR, get it reviewed, merge.
 4. Tag the merged commit on `main`: `git tag v<version> && git push origin v<version>`.
 

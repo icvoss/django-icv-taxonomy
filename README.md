@@ -6,13 +6,13 @@
 [![Django versions](https://img.shields.io/pypi/djversions/django-icv-taxonomy.svg)](https://pypi.org/project/django-icv-taxonomy/)
 [![Licence: MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Cross-domain taxonomy, vocabularies, and tagging for Django — hierarchical and flat term trees, generic object tagging, typed M2M join tables, and SKOS-style term relationships.
+Cross-domain taxonomy, vocabularies, and tagging for Django: hierarchical and flat term trees, generic object tagging, typed M2M join tables, and SKOS-style term relationships.
 
 ---
 
 ## Why Does This Exist?
 
-Most Django projects invent their own tagging and categorisation from scratch. The result is a different pattern per app: one uses a `CharField`, another a flat M2M, a third builds a category tree — and none of them talk to each other.
+Most Django projects invent their own tagging and categorisation from scratch. The result is a different pattern per app: one uses a `CharField`, another a flat M2M, a third builds a category tree, and none of them talk to each other.
 
 django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents "Genres", another represents "Topics", another "Tags". Any model in any app can be associated with terms from any vocabulary, via a single generic association table or a typed M2M join table for high-throughput paths. Term hierarchies are powered by [django-icv-tree](https://github.com/icvoss/django-icv-tree) (materialised-path trees), which makes ancestor/descendant queries fast without recursive SQL.
 
@@ -23,7 +23,7 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 ### Vocabularies
 
 - Three structural types: **flat** (simple tag lists), **hierarchical** (trees), **faceted** (multi-axis classification)
-- Open or closed — closed vocabularies reject new terms; useful for controlled vocabularies
+- Open or closed: closed vocabularies reject new terms; useful for controlled vocabularies
 - Per-vocabulary cardinality: single-term or multi-term per object
 - Optional max depth limit on hierarchical vocabularies
 - Type is immutable once terms exist
@@ -40,7 +40,7 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 
 - Tag any Django model with any term via `TermAssociation` (Django `GenericForeignKey`)
 - Supports integer, UUID, and string primary keys
-- Ordered associations — terms on an object carry a display order
+- Ordered associations: terms on an object carry a display order
 - Cardinality enforcement for single-term vocabularies
 - `cleanup_orphaned_associations()` detects and removes stale rows when tagged objects are deleted
 
@@ -58,16 +58,16 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 
 ### Term Lifecycle
 
-- `merge_terms()` transfers associations, relationships, and optionally re-parents children — atomic, with `on_commit` signal
+- `merge_terms()` transfers associations, relationships, and optionally re-parents children; atomic, with `on_commit` signal
 - `move_term()` delegates to icv-tree's `move_to()` service; emits `term_moved`
 - Import/export: JSON-serialisable round-trip, idempotent by slug
 
 ### Developer Experience
 
 - Swappable `Vocabulary` and `Term` models (`ICV_TAXONOMY_VOCABULARY_MODEL` / `ICV_TAXONOMY_TERM_MODEL`)
-- Optional integration with `django-icv-core` (`BaseModel` — UUID PK, timestamps)
+- Optional integration with `django-icv-core` (`BaseModel`: UUID PK, timestamps)
 - System checks validate settings at startup
-- Django signals for every lifecycle event — vocabulary, term, and tagging
+- Django signals for every lifecycle event: vocabulary, term, and tagging
 
 ---
 
@@ -80,7 +80,7 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 
 Optional:
 
-- [django-icv-core](https://github.com/icvoss/django-icv-core) — adds UUID primary keys and `created_at`/`updated_at` timestamps to vocabulary and term models
+- [django-icv-core](https://github.com/icvoss/django-icv-core): adds UUID primary keys and `created_at`/`updated_at` timestamps to vocabulary and term models
 
 ---
 
@@ -117,10 +117,10 @@ python manage.py migrate
 ```python
 from icv_taxonomy.services import create_vocabulary, create_term
 
-# A flat tag vocabulary — open, multi-term per object
+# A flat tag vocabulary: open, multi-term per object
 tags = create_vocabulary(name="Tags", vocabulary_type="flat")
 
-# A hierarchical category tree — open, single category per object
+# A hierarchical category tree: open, single category per object
 categories = create_vocabulary(
     name="Categories",
     vocabulary_type="hierarchical",
@@ -131,11 +131,11 @@ categories = create_vocabulary(
 ### 2. Add terms
 
 ```python
-# Flat vocabulary — no parent
+# Flat vocabulary: no parent
 python_tag = create_term(vocabulary=tags, name="Python")
 django_tag = create_term(vocabulary=tags, name="Django")
 
-# Hierarchical vocabulary — nested
+# Hierarchical vocabulary: nested
 tech = create_term(vocabulary=categories, name="Technology")
 web = create_term(vocabulary=categories, name="Web Development", parent=tech)
 backend = create_term(vocabulary=categories, name="Backend", parent=web)
@@ -185,7 +185,7 @@ all_tagged = get_objects_for_term(django_tag)
 | `faceted` | Multi-root tree; no structural restriction | Multi-axis classification (colour + size + material) |
 
 ```python
-# Flat — terms are root-level only
+# Flat: terms are root-level only
 colours = create_vocabulary(name="Colours", vocabulary_type="flat")
 
 # Hierarchical with a depth limit
@@ -195,7 +195,7 @@ locations = create_vocabulary(
     max_depth=2,  # continent → country → region, no deeper
 )
 
-# Faceted — unrestricted structure, multiple classification axes
+# Faceted: unrestricted structure, multiple classification axes
 attributes = create_vocabulary(name="Attributes", vocabulary_type="faceted")
 ```
 
@@ -238,17 +238,17 @@ terms_in_vocab = get_terms_for_object_typed(article, through_model=ArticleTerm, 
 ```python
 from icv_taxonomy.services import add_relationship, remove_relationship, get_related_terms, get_synonyms
 
-# Synonym — bidirectional; creates both directions automatically
+# Synonym: bidirectional; creates both directions automatically
 add_relationship(python_tag, py_tag, "synonym")
 
 # Hierarchical semantic links
 add_relationship(django_tag, python_tag, "broader")
 add_relationship(python_tag, django_tag, "narrower")
 
-# Related — also bidirectional
+# Related: also bidirectional
 add_relationship(django_tag, flask_tag, "related")
 
-# See also — directional only
+# See also: directional only
 add_relationship(django_tag, drf_tag, "see_also")
 
 # Query relationships
@@ -274,7 +274,7 @@ from icv_taxonomy.services import merge_terms
 result = merge_terms(source=old_term, target=new_term)
 # result = {"associations_transferred": 42, "relationships_transferred": 5, "children_reparented": 0}
 
-# Source has children — re-parent them to target before merging
+# Source has children: re-parent them to target before merging
 result = merge_terms(source=old_term, target=new_term, children_strategy="reparent")
 
 # Re-parent children up to source's parent instead
@@ -315,7 +315,7 @@ from icv_taxonomy.services import export_vocabulary, import_vocabulary
 data = export_vocabulary(categories)
 data = export_vocabulary(categories, include_inactive=True)
 
-# Import — creates vocabulary if slug absent, updates if present (idempotent)
+# Import: creates vocabulary if slug absent, updates if present (idempotent)
 result = import_vocabulary(data)
 # result = {"created": 12, "updated": 3, "skipped": 0}
 
@@ -371,12 +371,12 @@ result = cleanup_orphaned_associations()
 # Restrict to a single model
 result = cleanup_orphaned_associations(model_class=Article)
 
-# Dry run — report without deleting
+# Dry run: report without deleting
 result = cleanup_orphaned_associations(dry_run=True)
 ```
 
 Because there is no database cascade, **you are responsible for running this
-periodically** — orphans accumulate silently otherwise. Two automatic options:
+periodically**: orphans accumulate silently otherwise. Two automatic options:
 
 ```bash
 # Management command (also runs as part of icv_taxonomy_check --fix)
@@ -384,7 +384,7 @@ python manage.py icv_taxonomy_check --fix
 ```
 
 ```python
-# Celery beat — schedule the bundled task (Celery optional; the task is a
+# Celery beat: schedule the bundled task (Celery optional; the task is a
 # no-op-decorated plain function when Celery is absent and can be called directly)
 CELERY_BEAT_SCHEDULE = {
     "icv-taxonomy-orphan-cleanup": {
@@ -408,7 +408,7 @@ cleanup_orphaned_associations_task.delay("app_label.Model")  # one model
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `name` | CharField(255) | — | Human-readable name. Globally unique. |
+| `name` | CharField(255) | (required) | Human-readable name. Globally unique. |
 | `slug` | SlugField(255) | auto | URL-safe identifier. Auto-generated from name if blank. |
 | `description` | TextField | `""` | Optional description of the vocabulary's purpose. |
 | `vocabulary_type` | CharField | `"flat"` | One of `flat`, `hierarchical`, `faceted`. Immutable once terms exist. |
@@ -422,18 +422,18 @@ cleanup_orphaned_associations_task.delay("app_label.Model")  # one model
 
 ### Term
 
-Extends `icv_tree.TreeNode` — inherits `path`, `depth`, `order`, `parent`.
+Extends `icv_tree.TreeNode`: inherits `path`, `depth`, `order`, `parent`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `vocabulary` | ForeignKey | — | The vocabulary this term belongs to. Immutable after creation. |
-| `name` | CharField(255) | — | Human-readable label. |
+| `vocabulary` | ForeignKey | (required) | The vocabulary this term belongs to. Immutable after creation. |
+| `name` | CharField(255) | (required) | Human-readable label. |
 | `slug` | SlugField(255) | auto | URL-safe identifier, unique within vocabulary. Auto-generated from name if blank. |
 | `description` | TextField | `""` | Optional description. |
 | `is_active` | BooleanField | `True` | Inactive terms are hidden from default querysets and blocked from new tagging. |
 | `metadata` | JSONField | `{}` | Arbitrary key/value pairs. |
-| `path` | (from TreeNode) | — | Materialised path string. |
-| `depth` | (from TreeNode) | — | Zero-based depth in tree. |
+| `path` | (from TreeNode) | (managed) | Materialised path string. |
+| `depth` | (from TreeNode) | (managed) | Zero-based depth in tree. |
 | `parent` | (from TreeNode) | `None` | Parent term, or None for root terms. |
 
 **Managers:** `objects` (active only, tree-aware) · `all_objects` (unfiltered tree manager)
@@ -503,11 +503,11 @@ All public functions are importable from `icv_taxonomy.services`.
 |----------|-------------|
 | `tag_object(term, obj)` | Associate a term with an object. Validates activity, uniqueness, cardinality. |
 | `untag_object(term, obj)` | Remove a term from an object. |
-| `replace_term_on_object(obj, old_term, new_term)` | Atomic swap — untag old, tag new. |
+| `replace_term_on_object(obj, old_term, new_term)` | Atomic swap: untag old, tag new. |
 | `bulk_tag_objects(term, objects, emit_signals=True)` | Tag a list of objects in bulk via `bulk_create`. Skips duplicates. |
 | `get_terms_for_object(obj, vocabulary=None, vocabulary_slug=None)` | QuerySet of terms on an object, optionally filtered by vocabulary. |
 | `get_objects_for_term(term, model_class=None)` | Typed QuerySet (if `model_class` given) or heterogeneous list of tagged objects. |
-| `get_terms_for_object_typed(obj, through_model, vocabulary=None)` | Terms via typed M2M through table — no GenericFK overhead. |
+| `get_terms_for_object_typed(obj, through_model, vocabulary=None)` | Terms via typed M2M through table; no GenericFK overhead. |
 | `cleanup_orphaned_associations(model_class=None, dry_run=False)` | Remove associations whose objects no longer exist. Returns counts dict. |
 
 ### Term Relationships

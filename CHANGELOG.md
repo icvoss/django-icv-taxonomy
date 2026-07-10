@@ -26,16 +26,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   SPDX licence metadata) and no longer lists wheel; project URLs point
   at the icvoss GitHub organisation.
 
-## [0.4.0] — 2026-06-24
+## [0.4.0] - 2026-06-24
 
 ### Added
 
-- `icv_taxonomy.tasks.cleanup_orphaned_associations_task` — a schedulable
+- `icv_taxonomy.tasks.cleanup_orphaned_associations_task`: a schedulable
   Celery task wrapping `cleanup_orphaned_associations()`. `TermAssociation`
   uses a `GenericForeignKey` with no database cascade, so deleting a tagged
   object leaves orphan rows (BR-TAX-018); this gives projects an automatic,
   beat-schedulable cleanup instead of relying solely on a manual call. Celery
-  is optional — without it the task is a plain callable. README documents the
+  is optional; without it the task is a plain callable. README documents the
   cleanup obligation and how to schedule it.
 
 ### Fixed
@@ -47,7 +47,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   misconfiguration is visible, while the benign `AlreadyRegistered` case stays
   quiet.
 
-## [0.3.2] — 2026-04-20
+## [0.3.2] - 2026-04-20
 
 ### Fixed
 
@@ -56,9 +56,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   instead of bare `models.Model`. Installing icv-taxonomy without
   django-icv-core no longer breaks the model schema.
 - Admin no longer conditionally hides timestamp fields when icv-core is
-  absent — timestamps are always present and always shown.
+  absent; timestamps are always present and always shown.
 
-## [0.3.1] — 2026-04-18
+## [0.3.1] - 2026-04-18
 
 ### Fixed
 
@@ -68,20 +68,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `DEFAULT_AUTO_FIELD` setting no longer get phantom `AlterField`
   migrations for these junction tables.
 
-## [0.3.0] — 2026-04-08
+## [0.3.0] - 2026-04-08
 
 Promoted to Production/Stable.
 
 ### Added
 
-- `clear_vocabulary(vocab)` — delete all terms without deleting the
+- `clear_vocabulary(vocab)`: delete all terms without deleting the
   vocabulary; single bulk DELETE with database CASCADE
 - 50 new tests covering admin, management commands, template tags,
   clear_vocabulary, and signal emission
 
 ### Changed
 
-- `merge_terms()` rewritten with bulk operations — batch duplicate
+- `merge_terms()` rewritten with bulk operations: batch duplicate
   detection, bulk UPDATE for associations/relationships, `bulk_update()`
   for child reparenting. ~1,800 queries → ~18 for a typical merge (100x).
 - `import_vocabulary()` uses `bulk_update()` for existing terms instead
@@ -96,14 +96,14 @@ Promoted to Production/Stable.
 - `%(class)s_set` related_name pattern on all ForeignKeys for swappable
   model support
 
-## [0.2.1] — 2026-03-30
+## [0.2.1] - 2026-03-30
 
 ### Fixed
 
 - Add missing `swappable` Meta attribute to concrete `Vocabulary` and `Term` models
 - Add missing `swappable` option to `0001_initial` migration for both models
 
-## [0.2.0] — 2026-03-30
+## [0.2.0] - 2026-03-30
 
 ### Changed
 
@@ -111,14 +111,14 @@ Promoted to Production/Stable.
 - Require Python >= 3.11
 - Added Django 6.0 classifier
 
-## [0.1.1] — 2026-03-29
+## [0.1.1] - 2026-03-29
 
 ### Changed
 
 - Bumped minimum `django-icv-tree` dependency to >= 0.1.1
 - Promoted Development Status to Beta
 
-## [0.1.0] — 2026-03-27
+## [0.1.0] - 2026-03-27
 
 ### Added
 
