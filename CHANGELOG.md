@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.1] - 2026-07-12
+
+### Fixed
+
+- Migrations resolve ICV_TAXONOMY_VOCABULARY_MODEL/ICV_TAXONOMY_TERM_MODEL via
+  getattr with the package defaults, so a project that does not declare these
+  settings no longer crashes on migrate/makemigrations.
+
 ## [0.5.0] - 2026-07-09
 
 ### Added
