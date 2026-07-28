@@ -7,6 +7,39 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.6.0] - 2026-07-28
+
+### Added
+
+- **`AbstractVocabulary.scope_field`: per-scope name/slug uniqueness**
+  (issue #3). A subclass that adds a scoping field (for example a `tenant` or
+  `site` FK) can make vocabulary `name`/`slug` unique **within that scope**
+  instead of globally, so two scopes may each have a "Sale" vocabulary, by
+  setting `scope_field = "<field>"` (mirroring `AbstractTerm.tree_scope_field`):
+
+  ```python
+  class Vocabulary(AbstractVocabulary):
+      tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE)
+      scope_field = "tenant"
+  ```
+
+  The package is **tenancy-agnostic**: it scopes uniqueness by whatever field
+  name is given and never reads a tenant model or `ICV_TENANT_MODEL`. The
+  consumer owns the FK and its meaning. `scope_field = None` (the default)
+  keeps global uniqueness.
+
+### Changed
+
+- `AbstractVocabulary.name` and `.slug` no longer carry field-level
+  `unique=True`; uniqueness is now expressed as named `UniqueConstraint`s
+  computed from `scope_field` (on the `class_prepared` signal, which fires
+  after `_meta` is built). For the default `Vocabulary` this is a behavioural
+  no-op (same global uniqueness, now as
+  `icv_taxonomy_vocabulary_{name,slug}_uniq`). Migration
+  `0004_vocabulary_scope_field_uniqueness` applies the swap on the default
+  model; a consumer's swapped-in subclass carries its own scoped constraints
+  in its own app's migrations.
+
 ## [0.5.1] - 2026-07-12
 
 ### Fixed

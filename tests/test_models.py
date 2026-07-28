@@ -65,6 +65,69 @@ class TestVocabularySlugUniqueness:
         v2 = Vocabulary.objects.create(name="Colours CS Lower", slug="colourscs")
         assert v2.slug == "colourscs"
 
+    def test_duplicate_name_raises_integrity_error(self, db):
+        """Global name uniqueness is preserved by the named constraint (#3)."""
+        from icv_taxonomy.models import Vocabulary
+
+        Vocabulary.objects.create(name="Sizes", slug="sizes-a")
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Vocabulary.objects.create(name="Sizes", slug="sizes-b")
+
+
+class TestVocabularyScopeField:
+    """Issue #3 / BR-TAX-001: per-scope name/slug uniqueness via scope_field.
+
+    The default Vocabulary (scope_field=None) keeps global uniqueness; a
+    subclass that sets scope_field makes name/slug unique WITHIN that scope, so
+    two scopes may each have a "Sale" vocabulary. The package scopes by the
+    field NAME only and never learns what the scope is (tenancy-agnostic).
+    """
+
+    def test_default_vocabulary_has_global_uniqueness_constraints(self, db):
+        from icv_taxonomy.models import Vocabulary
+
+        names = {c.name: tuple(c.fields) for c in Vocabulary._meta.constraints}
+        assert names.get("icv_taxonomy_vocabulary_name_uniq") == ("name",)
+        assert names.get("icv_taxonomy_vocabulary_slug_uniq") == ("slug",)
+        # Field-level unique was removed in favour of the named constraints.
+        assert Vocabulary._meta.get_field("name").unique is False
+        assert Vocabulary._meta.get_field("slug").unique is False
+
+    def test_scoped_vocabulary_has_scoped_constraints(self, db):
+        from taxonomy_testapp.models import ScopedVocabulary
+
+        names = {c.name: tuple(c.fields) for c in ScopedVocabulary._meta.constraints}
+        assert names.get("taxonomy_testapp_scopedvocabulary_name_uniq") == ("scope", "name")
+        assert names.get("taxonomy_testapp_scopedvocabulary_slug_uniq") == ("scope", "slug")
+
+    def test_same_name_and_slug_allowed_in_different_scopes(self, db):
+        """Two scopes can each have a 'Sale' vocabulary (the whole point of #3)."""
+        from taxonomy_testapp.models import Scope, ScopedVocabulary
+
+        a = Scope.objects.create(name="Tenant A")
+        b = Scope.objects.create(name="Tenant B")
+
+        ScopedVocabulary.objects.create(scope=a, name="Sale", slug="sale")
+        # Same name AND slug under a different scope must be allowed.
+        v = ScopedVocabulary.objects.create(scope=b, name="Sale", slug="sale")
+        assert v.pk is not None
+
+    def test_duplicate_name_within_scope_raises(self, db):
+        from taxonomy_testapp.models import Scope, ScopedVocabulary
+
+        a = Scope.objects.create(name="Tenant A")
+        ScopedVocabulary.objects.create(scope=a, name="Sale", slug="sale-1")
+        with pytest.raises(IntegrityError), transaction.atomic():
+            ScopedVocabulary.objects.create(scope=a, name="Sale", slug="sale-2")
+
+    def test_duplicate_slug_within_scope_raises(self, db):
+        from taxonomy_testapp.models import Scope, ScopedVocabulary
+
+        a = Scope.objects.create(name="Tenant A")
+        ScopedVocabulary.objects.create(scope=a, name="Sale One", slug="sale")
+        with pytest.raises(IntegrityError), transaction.atomic():
+            ScopedVocabulary.objects.create(scope=a, name="Sale Two", slug="sale")
+
 
 @pytest.mark.django_db
 class TestVocabularyTypeImmutability:
