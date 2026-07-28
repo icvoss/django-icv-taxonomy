@@ -25,12 +25,69 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.signals import class_prepared
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from icv_tree.models import TreeManager, TreeNode, TreeQuerySet
 
 if TYPE_CHECKING:
     pass
+
+
+# ------------------------------------------------------------------
+# Vocabulary name/slug uniqueness, scoped by AbstractVocabulary.scope_field
+# ------------------------------------------------------------------
+
+
+def _attach_vocabulary_uniqueness(sender, **kwargs) -> None:
+    """Attach name/slug ``UniqueConstraint``s to a concrete vocabulary model.
+
+    ``AbstractVocabulary`` carries no field-level ``unique=True`` on ``name`` /
+    ``slug`` so a subclass can scope them. Uniqueness is attached here, on the
+    ``class_prepared`` signal (which fires AFTER Django has built the model's
+    ``_meta``, unlike ``__init_subclass__``), computed from the subclass's
+    ``scope_field``:
+
+    - ``scope_field is None`` (default) -> global ``(name,)`` and ``(slug,)``
+      constraints (byte-for-byte the historical behaviour, just named).
+    - ``scope_field = "<field>"`` -> ``(<field>, name)`` and ``(<field>, slug)``
+      constraints, so each scope gets its own name/slug namespace.
+
+    Idempotent (re-adding is a no-op) and skips any model that is not an
+    ``AbstractVocabulary`` subclass or does not define ``scope_field``. Keeps
+    ``_meta.original_attrs["constraints"]`` in sync so ``makemigrations``
+    detects the constraints.
+    """
+    # Only concrete AbstractVocabulary subclasses. Resolved lazily: this
+    # receiver is connected before AbstractVocabulary is defined.
+    base = globals().get("AbstractVocabulary")
+    if base is None or not (isinstance(sender, type) and issubclass(sender, base)):
+        return
+    if sender._meta.abstract:
+        return
+
+    scope = getattr(sender, "scope_field", None)
+    name_fields: tuple[str, ...] = ("name",) if scope is None else (scope, "name")
+    slug_fields: tuple[str, ...] = ("slug",) if scope is None else (scope, "slug")
+
+    prefix = sender._meta.db_table or sender.__name__.lower()
+    wanted = {
+        f"{prefix}_name_uniq": name_fields,
+        f"{prefix}_slug_uniq": slug_fields,
+    }
+    existing_names = {c.name for c in sender._meta.constraints}
+    added = [
+        models.UniqueConstraint(fields=fields, name=name)
+        for name, fields in wanted.items()
+        if name not in existing_names
+    ]
+    if not added:
+        return
+    sender._meta.constraints = list(sender._meta.constraints) + added
+    sender._meta.original_attrs["constraints"] = sender._meta.constraints
+
+
+class_prepared.connect(_attach_vocabulary_uniqueness)
 
 # ------------------------------------------------------------------
 # Optional icv-core base model (ADR-007 pattern)
@@ -135,17 +192,38 @@ class AbstractVocabulary(_BASE):  # type: ignore[valid-type,misc]
 
     Subclass this when you need to extend the vocabulary with project-specific
     fields. The concrete default is ``Vocabulary``.
+
+    Per-scope uniqueness (``scope_field``)
+    --------------------------------------
+    By default ``name`` and ``slug`` are globally unique. A subclass that adds
+    a scoping field (for example a ``tenant`` or ``site`` FK) can make name and
+    slug unique **within that scope** instead, so two scopes may each have a
+    "Sale" vocabulary, by setting the ``scope_field`` class attribute to that
+    field's name, mirroring ``AbstractTerm.tree_scope_field``:
+
+        class Vocabulary(AbstractVocabulary):
+            tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE)
+            scope_field = "tenant"
+
+    The package never learns what the scope *is*, it only scopes uniqueness by
+    the named field, so this is tenancy-agnostic (the consumer owns the FK and
+    its meaning). ``scope_field = None`` (the default) keeps global uniqueness
+    and is byte-for-byte the historical behaviour.
     """
+
+    #: Name of a field on a concrete subclass to scope ``name``/``slug``
+    #: uniqueness by. ``None`` (default) means global uniqueness. Mirrors
+    #: ``AbstractTerm.tree_scope_field``. Tenancy-agnostic: the package scopes
+    #: by whatever field name is given and never reads a tenant model.
+    scope_field: str | None = None
 
     name = models.CharField(
         max_length=255,
-        unique=True,
         verbose_name=_("name"),
-        help_text=_("Human-readable name for the vocabulary. Must be unique."),
+        help_text=_("Human-readable name for the vocabulary. Unique globally, or within scope_field if set."),
     )
     slug = models.SlugField(
         max_length=255,
-        unique=True,
         verbose_name=_("slug"),
         help_text=_("URL-safe identifier. Auto-generated from name if left blank (ICV_TAXONOMY_AUTO_SLUG=True)."),
     )
