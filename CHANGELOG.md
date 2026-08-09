@@ -7,6 +7,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.1] - 2026-08-09
+
+### Fixed
+
+- **`Term.path` migration for django-icv-tree 1.0.0** (#12). Tree 1.0.0 removed
+  an em dash from `TreeNode.path`'s `help_text`. `TreeNode` is abstract, so
+  every consumer subclass freezes that exact string into its own migration via
+  `Field.deconstruct()`, which made Django's autodetector demand a migration
+  here. `0005_alter_term_path` supplies it.
+
+  `help_text` only: `max_length`, `db_index`, `editable` and `verbose_name` are
+  unchanged, so it is a no-op at the database level. It still mattered, because
+  `makemigrations --check` is a deploy gate in consuming sites, so every
+  consumer on tree 1.0.0 had a red CI and a blocked deploy until this shipped.
+
+### Changed
+
+- The `django-icv-tree` floor is raised to `>=1.0.0`. Migration 0005 freezes
+  the `help_text` as that release words it, so resolving an older tree would
+  report the inverse drift and fail a consumer's `makemigrations --check` in
+  the opposite direction.
+
+---
+
 ## [1.0.0] - 2026-08-09
 
 ### Fixed
