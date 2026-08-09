@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-icv-taxonomy"
-version = "1.0.0"
+version = "1.0.1"
 description = "Cross-domain taxonomy, vocabularies, and tagging for Django — hierarchical/flat/faceted terms, generic associations, typed M2M factory."
 readme = "README.md"
 license = "MIT"
@@ -30,7 +30,12 @@ keywords = [
 ]
 dependencies = [
     "Django>=5.2",
-    "django-icv-tree>=0.2.0",
+    # Floor raised to 1.0.0: migration 0005 freezes TreeNode.path's help_text
+    # as that release words it. Resolving an older tree would put the previous
+    # wording back on the abstract base, so the autodetector would report the
+    # inverse drift and a consumer's makemigrations --check would fail again,
+    # in the opposite direction.
+    "django-icv-tree>=1.0.0",
 ]
 
 [project.optional-dependencies]
