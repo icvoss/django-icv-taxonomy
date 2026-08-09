@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("icv_taxonomy", "0004_vocabulary_scope_field_uniqueness"),
     ]
