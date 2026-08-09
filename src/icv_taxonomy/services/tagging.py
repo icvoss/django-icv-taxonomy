@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.contrib.contenttypes.models import ContentType
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from ..exceptions import TaxonomyValidationError
 
@@ -60,6 +60,25 @@ def tag_object(term: Any, obj: Any) -> Any:
     ``max(order)+1`` for existing associations on this object, or 0 if this
     is the first (BR-TAX-019).
 
+    Concurrency (BR-TAX-016, #6): a plain check-then-insert on cardinality
+    races two concurrent requests, each of which can see zero associations
+    and go on to create a term from the same single-value vocabulary for the
+    same object. ``vocabulary`` lives on the Term table, not on the
+    association row, so the ``allow_multiple`` condition cannot be expressed
+    as a database constraint on ``TermAssociation`` alone: the columns it
+    would need to span do not co-reside in one table, and the term model is
+    swappable. The guard is instead a service-layer lock. For
+    ``allow_multiple=False`` vocabularies, ``tag_object()`` opens an atomic
+    transaction and takes ``select_for_update()`` on the vocabulary row
+    before re-checking cardinality, serialising concurrent single-value
+    taggers on that vocabulary. The request that loses the race re-runs the
+    cardinality count under the lock and raises ``TaxonomyValidationError``
+    (BR-TAX-016): that is the defined losing-request error. A duplicate-tag
+    race on the same (term, content_type, object_id) is caught by the
+    existing unique constraint and mapped to the same exception type
+    (BR-TAX-015). Multi-value and generic-object behaviour is unchanged: no
+    lock is taken when ``allow_multiple=True``.
+
     Args:
         term: The Term to apply as a tag. Must have ``is_active=True``.
         obj: The Django model instance to tag.
@@ -69,7 +88,8 @@ def tag_object(term: Any, obj: Any) -> Any:
 
     Raises:
         TaxonomyValidationError: If the term is inactive, the association
-            already exists, or the vocabulary's cardinality is exceeded.
+            already exists, or the vocabulary's cardinality is exceeded
+            (including the losing side of a concurrent single-value tag).
 
     Side effects:
         Inserts a TermAssociation row.
@@ -85,36 +105,57 @@ def tag_object(term: Any, obj: Any) -> Any:
     ct = ContentType.objects.get_for_model(obj)
     object_id = _str_pk(obj)
 
-    # BR-TAX-015: Uniqueness check (guard before the DB constraint fires).
-    if TermAssociation.objects.filter(term=term, content_type=ct, object_id=object_id).exists():
-        raise TaxonomyValidationError(f"Term '{term.slug}' is already associated with this object (BR-TAX-015).")
+    with transaction.atomic():
+        if not term.vocabulary.allow_multiple:
+            # Lock the vocabulary row so concurrent single-value taggers on
+            # this vocabulary serialise here rather than racing the count
+            # below. Vocabulary is the correct lock target: it is the table
+            # that owns allow_multiple, and every tag_object() call for this
+            # vocabulary contends on the same row regardless of which term
+            # or object is being tagged.
+            Vocabulary = type(term.vocabulary)
+            Vocabulary.all_objects.select_for_update().get(pk=term.vocabulary_id)
 
-    # BR-TAX-016: Cardinality check for single-term vocabularies.
-    if not term.vocabulary.allow_multiple:
-        existing_count = TermAssociation.objects.filter(
-            content_type=ct,
-            object_id=object_id,
-            term__vocabulary=term.vocabulary,
-        ).count()
-        if existing_count >= 1:
-            raise TaxonomyValidationError(
-                f"Vocabulary '{term.vocabulary.slug}' does not allow multiple terms per object (BR-TAX-016)."
+        # BR-TAX-015: Uniqueness check (guard before the DB constraint fires).
+        if TermAssociation.objects.filter(term=term, content_type=ct, object_id=object_id).exists():
+            raise TaxonomyValidationError(f"Term '{term.slug}' is already associated with this object (BR-TAX-015).")
+
+        # BR-TAX-016: Cardinality check for single-term vocabularies. Runs
+        # under the vocabulary lock above, so a concurrent request that lost
+        # the race sees the winner's row here and raises.
+        if not term.vocabulary.allow_multiple:
+            existing_count = TermAssociation.objects.filter(
+                content_type=ct,
+                object_id=object_id,
+                term__vocabulary=term.vocabulary,
+            ).count()
+            if existing_count >= 1:
+                raise TaxonomyValidationError(
+                    f"Vocabulary '{term.vocabulary.slug}' does not allow multiple terms per object (BR-TAX-016)."
+                )
+
+        # BR-TAX-019: Order defaults to append.
+        from django.db.models import Max
+
+        max_order = TermAssociation.objects.filter(content_type=ct, object_id=object_id).aggregate(Max("order"))[
+            "order__max"
+        ]
+        next_order = (max_order + 1) if max_order is not None else 0
+
+        try:
+            association = TermAssociation.objects.create(
+                term=term,
+                content_type=ct,
+                object_id=object_id,
+                order=next_order,
             )
-
-    # BR-TAX-019: Order defaults to append.
-    from django.db.models import Max
-
-    max_order = TermAssociation.objects.filter(content_type=ct, object_id=object_id).aggregate(Max("order"))[
-        "order__max"
-    ]
-    next_order = (max_order + 1) if max_order is not None else 0
-
-    association = TermAssociation.objects.create(
-        term=term,
-        content_type=ct,
-        object_id=object_id,
-        order=next_order,
-    )
+        except IntegrityError as exc:
+            # BR-TAX-015 duplicate-tag race: the unique constraint on
+            # (term, content_type, object_id) caught a concurrent insert
+            # that the pre-check above did not see.
+            raise TaxonomyValidationError(
+                f"Term '{term.slug}' is already associated with this object (BR-TAX-015)."
+            ) from exc
 
     object_tagged.send(
         sender=term.__class__,

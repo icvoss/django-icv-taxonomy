@@ -7,6 +7,7 @@ to the APP-021 spec (docs/specs/APP-021-taxonomy/02-business-rules.md).
 
 from __future__ import annotations
 
+import django.test
 import pytest
 
 # ===========================================================================
@@ -588,6 +589,160 @@ class TestTagObject:
         term = create_term(vocabulary=vocab, name="First")
         assoc = tag_object(term, article)
         assert assoc.order == 0
+
+    def test_single_value_vocabulary_locks_the_vocabulary_row(self, db, article):
+        """Regression for #6: tagging into a single-value vocabulary takes
+        ``select_for_update()`` on the vocabulary row before the cardinality
+        check, as the documented locking strategy.
+
+        This asserts the lock query is actually issued (the exact wording
+        used in the #6 acceptance criteria), independent of any backend's
+        ability to demonstrate a real cross-connection block. SQLite drops
+        the ``FOR UPDATE`` clause from the emitted SQL (Django's documented
+        behaviour there), so this checks the query shape reaches the
+        vocabulary table by primary key rather than parsing for the clause
+        itself, which would be backend-specific.
+        """
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from icv_taxonomy.services import create_term, create_vocabulary, tag_object
+
+        vocab = create_vocabulary(name="Locked", vocabulary_type="flat", allow_multiple=False)
+        term = create_term(vocabulary=vocab, name="Only")
+
+        with CaptureQueriesContext(connection) as ctx:
+            tag_object(term, article)
+
+        vocab_pk_repr = vocab.pk.hex if hasattr(vocab.pk, "hex") else str(vocab.pk)
+        vocabulary_lock_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "icv_taxonomy_vocabulary" in q["sql"] and vocab_pk_repr in q["sql"]
+        ]
+        assert vocabulary_lock_queries, (
+            "expected a query selecting the vocabulary row by pk (the select_for_update() "
+            f"lock target); captured queries: {[q['sql'] for q in ctx.captured_queries]}"
+        )
+
+    def test_multi_value_vocabulary_does_not_lock_the_vocabulary_row(self, db, article):
+        """A vocabulary with ``allow_multiple=True`` is not serialised: no
+        query selects the vocabulary row for tagging (only the cardinality
+        guard for single-value vocabularies needs it)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from icv_taxonomy.services import create_term, create_vocabulary, tag_object
+
+        vocab = create_vocabulary(name="Open", vocabulary_type="flat", allow_multiple=True)
+        term = create_term(vocabulary=vocab, name="Any")
+
+        with CaptureQueriesContext(connection) as ctx:
+            tag_object(term, article)
+
+        vocab_pk_repr = vocab.pk.hex if hasattr(vocab.pk, "hex") else str(vocab.pk)
+        vocabulary_lock_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "icv_taxonomy_vocabulary" in q["sql"] and vocab_pk_repr in q["sql"]
+        ]
+        assert not vocabulary_lock_queries
+
+
+class TestTagObjectConcurrency(django.test.TransactionTestCase):
+    """Regression for #6: concurrent single-value tagging must leave at most
+    one association, never two.
+
+    Uses real OS threads against a genuine (file-backed) test database, since
+    ``TransactionTestCase`` is the only Django/pytest-django mechanism that
+    lets two threads see each other's committed writes; plain ``:memory:``
+    SQLite connections (the ``db`` fixture's default) are isolated per
+    connection and cannot reproduce a cross-request race at all.
+
+    Backend note: ``select_for_update()`` is a documented no-op under
+    SQLite (Django silently ignores it there), so on this package's
+    SQLite-only CI the actual serialisation the test observes comes from
+    SQLite's own file-level writer lock, not from the lock call itself. The
+    losing thread may therefore surface as either the documented
+    ``TaxonomyValidationError`` (BR-TAX-016, the outcome the lock is
+    designed to produce, provable on a backend where ``select_for_update()``
+    genuinely blocks such as PostgreSQL) or a lower-level ``django.db.Error``
+    from SQLite's own lock contention. Both are acceptable losing outcomes
+    for this test: what must hold on every backend, and is asserted
+    unconditionally, is the actual invariant from the acceptance criteria,
+    that concurrent single-value tagging leaves at most one association.
+    """
+
+    databases = {"default"}
+
+    def test_concurrent_single_value_tagging_leaves_at_most_one_association(self):
+        import threading
+
+        from django.apps import apps
+        from django.db import Error as DjangoDBError
+        from django.db import connections
+        from taxonomy_testapp.models import Article
+
+        from icv_taxonomy.exceptions import TaxonomyValidationError
+        from icv_taxonomy.models import Term
+        from icv_taxonomy.services import create_term, create_vocabulary, tag_object
+
+        # A generous busy-timeout so SQLite queues the losing writer for the
+        # lock rather than failing it immediately with "database is locked"
+        # before the winner has had a chance to commit.
+        connections["default"].settings_dict.setdefault("OPTIONS", {})
+        connections["default"].settings_dict["OPTIONS"]["timeout"] = 20
+
+        vocab = create_vocabulary(
+            name="Single Value Race",
+            slug="single-value-race",
+            vocabulary_type="flat",
+            allow_multiple=False,
+        )
+        term_a = create_term(vocabulary=vocab, name="Option A")
+        term_b = create_term(vocabulary=vocab, name="Option B")
+        article = Article.objects.create(title="Race")
+
+        outcomes: list[tuple[str, ...]] = []
+        barrier = threading.Barrier(2)
+
+        def worker(term_pk: str) -> None:
+            connections["default"].settings_dict.setdefault("OPTIONS", {})
+            connections["default"].settings_dict["OPTIONS"]["timeout"] = 20
+            try:
+                term = Term.all_objects.get(pk=term_pk)
+                barrier.wait(timeout=5)
+                association = tag_object(term, article)
+                outcomes.append(("ok", str(association.term_id)))
+            except TaxonomyValidationError as exc:
+                outcomes.append(("validation_error", str(exc)))
+            except DjangoDBError as exc:
+                outcomes.append(("db_error", type(exc).__name__, str(exc)))
+            finally:
+                connections.close_all()
+
+        thread_a = threading.Thread(target=worker, args=(term_a.pk,))
+        thread_b = threading.Thread(target=worker, args=(term_b.pk,))
+        thread_a.start()
+        thread_b.start()
+        thread_a.join(timeout=15)
+        thread_b.join(timeout=15)
+
+        assert len(outcomes) == 2, f"both workers must finish, got: {outcomes}"
+        assert not any(t[0] not in ("ok", "validation_error", "db_error") for t in outcomes)
+
+        TermAssociation = apps.get_model("icv_taxonomy", "TermAssociation")
+        final_count = TermAssociation.objects.filter(
+            content_type__model="article",
+            object_id=str(article.pk),
+        ).count()
+
+        # The hard invariant: never two associations from a single-value
+        # vocabulary on the same object, regardless of which exception type
+        # the losing thread surfaced.
+        assert final_count <= 1
+        ok_outcomes = [t for t in outcomes if t[0] == "ok"]
+        assert len(ok_outcomes) <= 1, f"at most one tag_object() call may succeed, got: {outcomes}"
 
 
 @pytest.mark.django_db
@@ -1314,3 +1469,149 @@ class TestImportVocabulary:
         # All existing terms are updated (not recreated).
         assert result["created"] == 0
         assert result["updated"] == 2
+
+    def test_first_import_of_hierarchical_vocabulary_creates_full_tree(self, db):
+        """Regression for #4: first import of a hierarchical vocabulary into an
+        empty database must create every term, parents and children alike, not
+        just the top-level terms.
+
+        Before the fix, a newly-created parent was only registered in
+        ``imported_terms`` after the whole classification loop had already run,
+        so every child of a new parent was skipped on a first import. Using
+        ``export_vocabulary()`` on a fresh 3-level tree (a root with 3 children,
+        each with 2 grandchildren: 13 terms total) into a brand new, empty
+        vocabulary reproduces the "first import" trigger.
+        """
+        from icv_taxonomy.models import Term, Vocabulary
+        from icv_taxonomy.services import export_vocabulary, import_vocabulary
+
+        source = _make_hierarchical_vocabulary()
+        data = export_vocabulary(source)
+        data["slug"] = "imported-hierarchical-vocab"
+        data["name"] = "Imported Hierarchical Vocab"
+
+        result = import_vocabulary(data)
+
+        assert result["skipped"] == 0
+        assert result["created"] == len(data["terms"])
+
+        imported_vocab = Vocabulary.all_objects.get(slug="imported-hierarchical-vocab")
+        imported_slugs = set(Term.all_objects.filter(vocabulary=imported_vocab).values_list("slug", flat=True))
+        source_slugs = {t["slug"] for t in data["terms"]}
+        assert imported_slugs == source_slugs
+
+        # Parent/child relationships must have landed too, not just the terms.
+        root = Term.all_objects.get(vocabulary=imported_vocab, slug="root")
+        child_1 = Term.all_objects.get(vocabulary=imported_vocab, slug="child-1")
+        grandchild_1_1 = Term.all_objects.get(vocabulary=imported_vocab, slug="grandchild-1-1")
+        assert child_1.parent_id == root.id
+        assert grandchild_1_1.parent_id == child_1.id
+
+    def test_new_child_under_existing_parent_is_created(self, db):
+        """A new child term whose parent already exists is created, not skipped."""
+        from icv_taxonomy.models import Term
+        from icv_taxonomy.services import create_term, create_vocabulary, import_vocabulary
+
+        vocab = create_vocabulary(name="Existing Parent", slug="existing-parent", vocabulary_type="hierarchical")
+        root = create_term(vocabulary=vocab, name="Root", slug="root")
+
+        data = {
+            "terms": [
+                {
+                    "name": "New Child",
+                    "slug": "new-child",
+                    "description": "",
+                    "parent_slug": root.slug,
+                    "is_active": True,
+                    "metadata": {},
+                }
+            ],
+            "relationships": [],
+        }
+        result = import_vocabulary(data, vocabulary=vocab)
+
+        assert result["created"] == 1
+        assert result["skipped"] == 0
+        new_child = Term.all_objects.get(vocabulary=vocab, slug="new-child")
+        assert new_child.parent_id == root.id
+
+    def test_dangling_parent_slug_is_still_skipped(self, db):
+        """A term whose parent_slug never appears anywhere in the import is
+        genuinely skipped, not silently created as a root (BR-TAX-031 additive
+        import semantics are preserved for truly unresolvable references)."""
+        from icv_taxonomy.models import Term
+        from icv_taxonomy.services import create_vocabulary, import_vocabulary
+
+        vocab = create_vocabulary(name="Dangling", slug="dangling", vocabulary_type="hierarchical")
+
+        data = {
+            "terms": [
+                {
+                    "name": "Orphan",
+                    "slug": "orphan",
+                    "description": "",
+                    "parent_slug": "does-not-exist",
+                    "is_active": True,
+                    "metadata": {},
+                }
+            ],
+            "relationships": [],
+        }
+        result = import_vocabulary(data, vocabulary=vocab)
+
+        assert result["created"] == 0
+        assert result["skipped"] == 1
+        assert not Term.all_objects.filter(vocabulary=vocab, slug="orphan").exists()
+
+    def test_reimport_after_first_import_stays_idempotent(self, db):
+        """Re-importing the same hierarchical export a second time updates the
+        already-created terms and creates nothing new (BR-TAX-031)."""
+        from icv_taxonomy.models import Vocabulary
+        from icv_taxonomy.services import export_vocabulary, import_vocabulary
+
+        source = _make_hierarchical_vocabulary()
+        data = export_vocabulary(source)
+        data["slug"] = "reimport-hierarchical-vocab"
+        data["name"] = "Reimport Hierarchical Vocab"
+
+        first = import_vocabulary(data)
+        assert first["skipped"] == 0
+        assert first["created"] == len(data["terms"])
+
+        imported_vocab = Vocabulary.all_objects.get(slug="reimport-hierarchical-vocab")
+        second = import_vocabulary(data, vocabulary=imported_vocab)
+
+        assert second["created"] == 0
+        assert second["skipped"] == 0
+        assert second["updated"] == len(data["terms"])
+
+
+def _make_hierarchical_vocabulary():
+    """Build a standalone 3-level hierarchical vocabulary (13 terms) for
+    export/import regression tests, independent of the ``hierarchical_vocabulary``
+    fixture's slug so tests can create several without colliding.
+    """
+    from icv_taxonomy.services import create_term, create_vocabulary
+
+    vocab = create_vocabulary(
+        name="Source Hierarchical Vocab",
+        slug="source-hierarchical-vocab",
+        vocabulary_type="hierarchical",
+        is_open=True,
+    )
+    root = create_term(vocabulary=vocab, name="Root", slug="root")
+    for child_n in range(1, 4):
+        child = create_term(
+            vocabulary=vocab,
+            name=f"Child {child_n}",
+            slug=f"child-{child_n}",
+            parent=root,
+        )
+        for gc_n in range(1, 3):
+            create_term(
+                vocabulary=vocab,
+                name=f"Grandchild {child_n}-{gc_n}",
+                slug=f"grandchild-{child_n}-{gc_n}",
+                parent=child,
+            )
+    return vocab

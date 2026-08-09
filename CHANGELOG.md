@@ -7,6 +7,41 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`import_vocabulary()` no longer skips child terms on the first import of a
+  hierarchical vocabulary** (issue #4). The classification loop resolved a
+  new term's parent from a map that was only updated for **existing**
+  terms; a newly-created parent was registered only in a later, separate
+  create loop, after every child's skip decision had already been made. On
+  a first import of a fully new tree, every non-root term was silently
+  counted as `skipped`. Import now classifies and creates each term in a
+  single pass, registering a new term against its slug immediately so
+  later entries in the same pass can resolve it as a parent. A parent slug
+  that is genuinely absent (not an existing term, not an earlier entry in
+  the same import) is still skipped. If you were retrying `import_vocabulary()`
+  in a loop until `created == 0` to work around this, that workaround is no
+  longer necessary.
+
+- **`tag_object()` is now concurrency-safe for single-value vocabularies**
+  (issue #6). The `allow_multiple=False` cardinality check was a plain
+  check-then-insert: two concurrent requests could each see zero existing
+  associations and both create a term from the same single-value vocabulary
+  for the same object. `vocabulary` lives on the `Term` table, not on
+  `TermAssociation`, so the condition cannot be expressed as a database
+  constraint on `TermAssociation` alone. `tag_object()` now takes
+  `select_for_update()` on the vocabulary row inside an atomic transaction
+  before re-checking cardinality for `allow_multiple=False` vocabularies,
+  serialising concurrent single-value taggers on that vocabulary. The
+  losing request raises `TaxonomyValidationError` (BR-TAX-016); a
+  duplicate-tag race on the same term is caught by the existing unique
+  constraint and mapped to the same exception type. Multi-value and
+  generic-object tagging behaviour is unchanged.
+
+---
+
 ## [0.6.0] - 2026-07-28
 
 ### Added
