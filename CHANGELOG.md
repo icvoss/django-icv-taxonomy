@@ -25,6 +25,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   in a loop until `created == 0` to work around this, that workaround is no
   longer necessary.
 
+- **`tag_object()` is now concurrency-safe for single-value vocabularies**
+  (issue #6). The `allow_multiple=False` cardinality check was a plain
+  check-then-insert: two concurrent requests could each see zero existing
+  associations and both create a term from the same single-value vocabulary
+  for the same object. `vocabulary` lives on the `Term` table, not on
+  `TermAssociation`, so the condition cannot be expressed as a database
+  constraint on `TermAssociation` alone. `tag_object()` now takes
+  `select_for_update()` on the vocabulary row inside an atomic transaction
+  before re-checking cardinality for `allow_multiple=False` vocabularies,
+  serialising concurrent single-value taggers on that vocabulary. The
+  losing request raises `TaxonomyValidationError` (BR-TAX-016); a
+  duplicate-tag race on the same term is caught by the existing unique
+  constraint and mapped to the same exception type. Multi-value and
+  generic-object tagging behaviour is unchanged.
+
 ---
 
 ## [0.6.0] - 2026-07-28

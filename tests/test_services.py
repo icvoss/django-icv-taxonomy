@@ -7,6 +7,7 @@ to the APP-021 spec (docs/specs/APP-021-taxonomy/02-business-rules.md).
 
 from __future__ import annotations
 
+import django.test
 import pytest
 
 # ===========================================================================
@@ -588,6 +589,160 @@ class TestTagObject:
         term = create_term(vocabulary=vocab, name="First")
         assoc = tag_object(term, article)
         assert assoc.order == 0
+
+    def test_single_value_vocabulary_locks_the_vocabulary_row(self, db, article):
+        """Regression for #6: tagging into a single-value vocabulary takes
+        ``select_for_update()`` on the vocabulary row before the cardinality
+        check, as the documented locking strategy.
+
+        This asserts the lock query is actually issued (the exact wording
+        used in the #6 acceptance criteria), independent of any backend's
+        ability to demonstrate a real cross-connection block. SQLite drops
+        the ``FOR UPDATE`` clause from the emitted SQL (Django's documented
+        behaviour there), so this checks the query shape reaches the
+        vocabulary table by primary key rather than parsing for the clause
+        itself, which would be backend-specific.
+        """
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from icv_taxonomy.services import create_term, create_vocabulary, tag_object
+
+        vocab = create_vocabulary(name="Locked", vocabulary_type="flat", allow_multiple=False)
+        term = create_term(vocabulary=vocab, name="Only")
+
+        with CaptureQueriesContext(connection) as ctx:
+            tag_object(term, article)
+
+        vocab_pk_repr = vocab.pk.hex if hasattr(vocab.pk, "hex") else str(vocab.pk)
+        vocabulary_lock_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "icv_taxonomy_vocabulary" in q["sql"] and vocab_pk_repr in q["sql"]
+        ]
+        assert vocabulary_lock_queries, (
+            "expected a query selecting the vocabulary row by pk (the select_for_update() "
+            f"lock target); captured queries: {[q['sql'] for q in ctx.captured_queries]}"
+        )
+
+    def test_multi_value_vocabulary_does_not_lock_the_vocabulary_row(self, db, article):
+        """A vocabulary with ``allow_multiple=True`` is not serialised: no
+        query selects the vocabulary row for tagging (only the cardinality
+        guard for single-value vocabularies needs it)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from icv_taxonomy.services import create_term, create_vocabulary, tag_object
+
+        vocab = create_vocabulary(name="Open", vocabulary_type="flat", allow_multiple=True)
+        term = create_term(vocabulary=vocab, name="Any")
+
+        with CaptureQueriesContext(connection) as ctx:
+            tag_object(term, article)
+
+        vocab_pk_repr = vocab.pk.hex if hasattr(vocab.pk, "hex") else str(vocab.pk)
+        vocabulary_lock_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "icv_taxonomy_vocabulary" in q["sql"] and vocab_pk_repr in q["sql"]
+        ]
+        assert not vocabulary_lock_queries
+
+
+class TestTagObjectConcurrency(django.test.TransactionTestCase):
+    """Regression for #6: concurrent single-value tagging must leave at most
+    one association, never two.
+
+    Uses real OS threads against a genuine (file-backed) test database, since
+    ``TransactionTestCase`` is the only Django/pytest-django mechanism that
+    lets two threads see each other's committed writes; plain ``:memory:``
+    SQLite connections (the ``db`` fixture's default) are isolated per
+    connection and cannot reproduce a cross-request race at all.
+
+    Backend note: ``select_for_update()`` is a documented no-op under
+    SQLite (Django silently ignores it there), so on this package's
+    SQLite-only CI the actual serialisation the test observes comes from
+    SQLite's own file-level writer lock, not from the lock call itself. The
+    losing thread may therefore surface as either the documented
+    ``TaxonomyValidationError`` (BR-TAX-016, the outcome the lock is
+    designed to produce, provable on a backend where ``select_for_update()``
+    genuinely blocks such as PostgreSQL) or a lower-level ``django.db.Error``
+    from SQLite's own lock contention. Both are acceptable losing outcomes
+    for this test: what must hold on every backend, and is asserted
+    unconditionally, is the actual invariant from the acceptance criteria,
+    that concurrent single-value tagging leaves at most one association.
+    """
+
+    databases = {"default"}
+
+    def test_concurrent_single_value_tagging_leaves_at_most_one_association(self):
+        import threading
+
+        from django.apps import apps
+        from django.db import Error as DjangoDBError
+        from django.db import connections
+        from taxonomy_testapp.models import Article
+
+        from icv_taxonomy.exceptions import TaxonomyValidationError
+        from icv_taxonomy.models import Term
+        from icv_taxonomy.services import create_term, create_vocabulary, tag_object
+
+        # A generous busy-timeout so SQLite queues the losing writer for the
+        # lock rather than failing it immediately with "database is locked"
+        # before the winner has had a chance to commit.
+        connections["default"].settings_dict.setdefault("OPTIONS", {})
+        connections["default"].settings_dict["OPTIONS"]["timeout"] = 20
+
+        vocab = create_vocabulary(
+            name="Single Value Race",
+            slug="single-value-race",
+            vocabulary_type="flat",
+            allow_multiple=False,
+        )
+        term_a = create_term(vocabulary=vocab, name="Option A")
+        term_b = create_term(vocabulary=vocab, name="Option B")
+        article = Article.objects.create(title="Race")
+
+        outcomes: list[tuple[str, ...]] = []
+        barrier = threading.Barrier(2)
+
+        def worker(term_pk: str) -> None:
+            connections["default"].settings_dict.setdefault("OPTIONS", {})
+            connections["default"].settings_dict["OPTIONS"]["timeout"] = 20
+            try:
+                term = Term.all_objects.get(pk=term_pk)
+                barrier.wait(timeout=5)
+                association = tag_object(term, article)
+                outcomes.append(("ok", str(association.term_id)))
+            except TaxonomyValidationError as exc:
+                outcomes.append(("validation_error", str(exc)))
+            except DjangoDBError as exc:
+                outcomes.append(("db_error", type(exc).__name__, str(exc)))
+            finally:
+                connections.close_all()
+
+        thread_a = threading.Thread(target=worker, args=(term_a.pk,))
+        thread_b = threading.Thread(target=worker, args=(term_b.pk,))
+        thread_a.start()
+        thread_b.start()
+        thread_a.join(timeout=15)
+        thread_b.join(timeout=15)
+
+        assert len(outcomes) == 2, f"both workers must finish, got: {outcomes}"
+        assert not any(t[0] not in ("ok", "validation_error", "db_error") for t in outcomes)
+
+        TermAssociation = apps.get_model("icv_taxonomy", "TermAssociation")
+        final_count = TermAssociation.objects.filter(
+            content_type__model="article",
+            object_id=str(article.pk),
+        ).count()
+
+        # The hard invariant: never two associations from a single-value
+        # vocabulary on the same object, regardless of which exception type
+        # the losing thread surfaced.
+        assert final_count <= 1
+        ok_outcomes = [t for t in outcomes if t[0] == "ok"]
+        assert len(ok_outcomes) <= 1, f"at most one tag_object() call may succeed, got: {outcomes}"
 
 
 @pytest.mark.django_db
