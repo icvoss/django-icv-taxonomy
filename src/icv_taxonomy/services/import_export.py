@@ -236,12 +236,16 @@ def import_vocabulary(
 
         # --- Step 3: Import terms in path order (parents before children) ---
         # We rely on the export's depth-first path ordering: parents always
-        # appear before their children in the terms list.
+        # appear before their children in the terms list. A single pass
+        # creates and registers each new term immediately, so a new parent
+        # is available in imported_terms before its children are evaluated
+        # later in the same pass. Splitting classification from creation
+        # into two loops (the previous shape) breaks this: a new parent
+        # would only be registered in the second loop, after every child's
+        # skip decision had already been made in the first.
         imported_terms: dict[str, Any] = dict(existing_terms)
 
-        # Separate new and existing terms for batch processing.
         to_update: list[Any] = []
-        to_create_data: list[tuple[dict, Any | None]] = []  # (term_data, parent)
 
         for term_data in terms_data:
             slug = term_data["slug"]
@@ -267,32 +271,21 @@ def import_vocabulary(
                 imported_terms[slug] = term
                 updated += 1
             else:
-                to_create_data.append((term_data, parent))
-                # We'll add to imported_terms after create_term so parents
-                # are available for subsequent children.
+                term = create_term(
+                    vocabulary=vocabulary,
+                    name=term_data.get("name", slug),
+                    slug=slug,
+                    parent=parent,
+                    description=term_data.get("description", ""),
+                    is_active=term_data.get("is_active", True),
+                    metadata=term_data.get("metadata", {}),
+                )
+                imported_terms[slug] = term
+                created += 1
 
         # Batch-update existing terms in one query.
         if to_update:
             Term.objects.bulk_update(to_update, ["name", "description", "is_active", "metadata"])
-
-        # Create new terms — must be sequential (parents before children for
-        # path computation), but we skip the tree signal handler overhead by
-        # using create_term which handles path computation correctly.
-        # For very large imports, callers should use skip_tree_signals +
-        # rebuild() after import for best performance.
-        for term_data, parent in to_create_data:
-            slug = term_data["slug"]
-            term = create_term(
-                vocabulary=vocabulary,
-                name=term_data.get("name", slug),
-                slug=slug,
-                parent=parent,
-                description=term_data.get("description", ""),
-                is_active=term_data.get("is_active", True),
-                metadata=term_data.get("metadata", {}),
-            )
-            imported_terms[slug] = term
-            created += 1
 
         # --- Step 4: Import relationships (idempotent via add_relationship) ---
         for rel_data in data.get("relationships", []):

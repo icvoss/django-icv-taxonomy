@@ -1314,3 +1314,149 @@ class TestImportVocabulary:
         # All existing terms are updated (not recreated).
         assert result["created"] == 0
         assert result["updated"] == 2
+
+    def test_first_import_of_hierarchical_vocabulary_creates_full_tree(self, db):
+        """Regression for #4: first import of a hierarchical vocabulary into an
+        empty database must create every term, parents and children alike, not
+        just the top-level terms.
+
+        Before the fix, a newly-created parent was only registered in
+        ``imported_terms`` after the whole classification loop had already run,
+        so every child of a new parent was skipped on a first import. Using
+        ``export_vocabulary()`` on a fresh 3-level tree (a root with 3 children,
+        each with 2 grandchildren: 13 terms total) into a brand new, empty
+        vocabulary reproduces the "first import" trigger.
+        """
+        from icv_taxonomy.models import Term, Vocabulary
+        from icv_taxonomy.services import export_vocabulary, import_vocabulary
+
+        source = _make_hierarchical_vocabulary()
+        data = export_vocabulary(source)
+        data["slug"] = "imported-hierarchical-vocab"
+        data["name"] = "Imported Hierarchical Vocab"
+
+        result = import_vocabulary(data)
+
+        assert result["skipped"] == 0
+        assert result["created"] == len(data["terms"])
+
+        imported_vocab = Vocabulary.all_objects.get(slug="imported-hierarchical-vocab")
+        imported_slugs = set(Term.all_objects.filter(vocabulary=imported_vocab).values_list("slug", flat=True))
+        source_slugs = {t["slug"] for t in data["terms"]}
+        assert imported_slugs == source_slugs
+
+        # Parent/child relationships must have landed too, not just the terms.
+        root = Term.all_objects.get(vocabulary=imported_vocab, slug="root")
+        child_1 = Term.all_objects.get(vocabulary=imported_vocab, slug="child-1")
+        grandchild_1_1 = Term.all_objects.get(vocabulary=imported_vocab, slug="grandchild-1-1")
+        assert child_1.parent_id == root.id
+        assert grandchild_1_1.parent_id == child_1.id
+
+    def test_new_child_under_existing_parent_is_created(self, db):
+        """A new child term whose parent already exists is created, not skipped."""
+        from icv_taxonomy.models import Term
+        from icv_taxonomy.services import create_term, create_vocabulary, import_vocabulary
+
+        vocab = create_vocabulary(name="Existing Parent", slug="existing-parent", vocabulary_type="hierarchical")
+        root = create_term(vocabulary=vocab, name="Root", slug="root")
+
+        data = {
+            "terms": [
+                {
+                    "name": "New Child",
+                    "slug": "new-child",
+                    "description": "",
+                    "parent_slug": root.slug,
+                    "is_active": True,
+                    "metadata": {},
+                }
+            ],
+            "relationships": [],
+        }
+        result = import_vocabulary(data, vocabulary=vocab)
+
+        assert result["created"] == 1
+        assert result["skipped"] == 0
+        new_child = Term.all_objects.get(vocabulary=vocab, slug="new-child")
+        assert new_child.parent_id == root.id
+
+    def test_dangling_parent_slug_is_still_skipped(self, db):
+        """A term whose parent_slug never appears anywhere in the import is
+        genuinely skipped, not silently created as a root (BR-TAX-031 additive
+        import semantics are preserved for truly unresolvable references)."""
+        from icv_taxonomy.models import Term
+        from icv_taxonomy.services import create_vocabulary, import_vocabulary
+
+        vocab = create_vocabulary(name="Dangling", slug="dangling", vocabulary_type="hierarchical")
+
+        data = {
+            "terms": [
+                {
+                    "name": "Orphan",
+                    "slug": "orphan",
+                    "description": "",
+                    "parent_slug": "does-not-exist",
+                    "is_active": True,
+                    "metadata": {},
+                }
+            ],
+            "relationships": [],
+        }
+        result = import_vocabulary(data, vocabulary=vocab)
+
+        assert result["created"] == 0
+        assert result["skipped"] == 1
+        assert not Term.all_objects.filter(vocabulary=vocab, slug="orphan").exists()
+
+    def test_reimport_after_first_import_stays_idempotent(self, db):
+        """Re-importing the same hierarchical export a second time updates the
+        already-created terms and creates nothing new (BR-TAX-031)."""
+        from icv_taxonomy.models import Vocabulary
+        from icv_taxonomy.services import export_vocabulary, import_vocabulary
+
+        source = _make_hierarchical_vocabulary()
+        data = export_vocabulary(source)
+        data["slug"] = "reimport-hierarchical-vocab"
+        data["name"] = "Reimport Hierarchical Vocab"
+
+        first = import_vocabulary(data)
+        assert first["skipped"] == 0
+        assert first["created"] == len(data["terms"])
+
+        imported_vocab = Vocabulary.all_objects.get(slug="reimport-hierarchical-vocab")
+        second = import_vocabulary(data, vocabulary=imported_vocab)
+
+        assert second["created"] == 0
+        assert second["skipped"] == 0
+        assert second["updated"] == len(data["terms"])
+
+
+def _make_hierarchical_vocabulary():
+    """Build a standalone 3-level hierarchical vocabulary (13 terms) for
+    export/import regression tests, independent of the ``hierarchical_vocabulary``
+    fixture's slug so tests can create several without colliding.
+    """
+    from icv_taxonomy.services import create_term, create_vocabulary
+
+    vocab = create_vocabulary(
+        name="Source Hierarchical Vocab",
+        slug="source-hierarchical-vocab",
+        vocabulary_type="hierarchical",
+        is_open=True,
+    )
+    root = create_term(vocabulary=vocab, name="Root", slug="root")
+    for child_n in range(1, 4):
+        child = create_term(
+            vocabulary=vocab,
+            name=f"Child {child_n}",
+            slug=f"child-{child_n}",
+            parent=root,
+        )
+        for gc_n in range(1, 3):
+            create_term(
+                vocabulary=vocab,
+                name=f"Grandchild {child_n}-{gc_n}",
+                slug=f"grandchild-{child_n}-{gc_n}",
+                parent=child,
+            )
+    return vocab

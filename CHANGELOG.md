@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`import_vocabulary()` no longer skips child terms on the first import of a
+  hierarchical vocabulary** (issue #4). The classification loop resolved a
+  new term's parent from a map that was only updated for **existing**
+  terms; a newly-created parent was registered only in a later, separate
+  create loop, after every child's skip decision had already been made. On
+  a first import of a fully new tree, every non-root term was silently
+  counted as `skipped`. Import now classifies and creates each term in a
+  single pass, registering a new term against its slug immediately so
+  later entries in the same pass can resolve it as a parent. A parent slug
+  that is genuinely absent (not an existing term, not an earlier entry in
+  the same import) is still skipped. If you were retrying `import_vocabulary()`
+  in a loop until `created == 0` to work around this, that workaround is no
+  longer necessary.
+
+---
+
 ## [0.6.0] - 2026-07-28
 
 ### Added
