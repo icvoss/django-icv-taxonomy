@@ -11,6 +11,33 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Migrations that FK to the swappable `Term`/`Vocabulary` models now carry
+  a `swappable_dependency` edge** (#22). The migrations resolved the FK
+  target via `getattr(settings, "ICV_TAXONOMY_*_MODEL", ...)` but declared
+  no dependency forcing the swap app's migrations to run first, so Django
+  fell back to default app-processing order. A consuming app whose label
+  sorts after `icv_taxonomy` alphabetically (most consumer names, by chance)
+  crashed on first `migrate` with `ValueError: Related model
+  '<app>.<model>' cannot be resolved`, because icv_taxonomy's migrations ran
+  before the app providing the swapped model. Renaming the same app to sort
+  before `icv_taxonomy` made the crash disappear, with nothing else changed,
+  which is how it went unnoticed: the package's own swap fixture
+  (`tests/appswap`, now renamed `tests/zappswap`) happened to sort first.
+
+  Both migration graphs that resolve the FK through settings now declare
+  `migrations.swappable_dependency(...)` for both
+  `ICV_TAXONOMY_VOCABULARY_MODEL` and `ICV_TAXONOMY_TERM_MODEL`: the
+  squashed `0001_squashed_0003_alter_term_vocabulary_alter_termassociation_term_and_more`
+  (fresh installs) and the original
+  `0003_alter_term_vocabulary_alter_termassociation_term_and_more` (existing
+  installs still on the pre-squash chain). This is the same pattern Django
+  itself uses for `AUTH_USER_MODEL`, and it is a no-op when the model is not
+  swapped, since Django's loader ignores a `__first__` self-reference to the
+  same app. No `operations` changed in either migration file: this is purely
+  a graph-ordering fix.
+
+  Found while verifying the fix for #21.
+
 - **`Term.parent` now resolves through `ICV_TAXONOMY_TERM_MODEL`, not
   TreeNode's `to="self"`** (#21). `AbstractTerm` inherited `parent` unmodified
   from `icv_tree.models.TreeNode`, whose `to="self"` resolves at
