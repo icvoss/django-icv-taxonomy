@@ -7,6 +7,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.2] - 2026-08-10
+
+### Fixed
+
+- **Re-releases the `Term.path` migration that 1.0.1 was meant to carry.** The
+  `v1.0.1` tag was cut before the `0005_alter_term_path` commit landed on
+  `main`, so the published 1.0.1 artefact does not contain the migration its
+  own changelog entry described. Consumers on 1.0.1 still saw
+  `makemigrations --check` drift. No code change over 1.0.1; this release
+  exists to ship the migration. The original entry follows, unaltered.
+
 ## [1.0.1] - 2026-08-09
 
 ### Fixed
