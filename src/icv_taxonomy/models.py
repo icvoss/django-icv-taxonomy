@@ -386,6 +386,32 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
 
     tree_scope_field = "vocabulary"
 
+    # Redeclared from TreeNode, resolved through the swappable setting.
+    #
+    # TreeNode.parent uses to="self", which resolves at class-definition time
+    # against whichever concrete model the field lands on. That is correct for
+    # a non-swappable TreeNode consumer, but Term is swappable
+    # (ICV_TAXONOMY_TERM_MODEL). When a project swaps in its own AbstractTerm
+    # subclass, "self" still resolves to that subclass, not through the
+    # swappable setting, so the frozen migration state (which targets
+    # settings.ICV_TAXONOMY_TERM_MODEL) permanently disagrees with the live
+    # model state and makemigrations --check reports a spurious AlterField.
+    # Redeclaring the field here, resolved the same way term_from/term_to
+    # are below, keeps deconstruct() consistent with the swappable setting.
+    # Overriding an inherited field from an *abstract* base is permitted by
+    # Django (see django.db.models.base.ModelBase.__new__): the FieldError
+    # for a clashing field name is only raised for non-abstract bases.
+    parent = models.ForeignKey(
+        getattr(django_settings, "ICV_TAXONOMY_TERM_MODEL", "icv_taxonomy.Term"),
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="children",
+        db_index=True,
+        verbose_name=_("parent"),
+        help_text=_("Parent node. Null for root nodes."),
+    )
+
     vocabulary = models.ForeignKey(
         getattr(django_settings, "ICV_TAXONOMY_VOCABULARY_MODEL", "icv_taxonomy.Vocabulary"),
         on_delete=models.CASCADE,

@@ -7,6 +7,36 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`Term.parent` now resolves through `ICV_TAXONOMY_TERM_MODEL`, not
+  TreeNode's `to="self"`** (#21). `AbstractTerm` inherited `parent` unmodified
+  from `icv_tree.models.TreeNode`, whose `to="self"` resolves at
+  class-definition time against whichever concrete class the field lands on.
+  That is correct for a non-swappable `TreeNode` consumer, but `Term` is
+  swappable. When a consuming project pointed `ICV_TAXONOMY_TERM_MODEL` at its
+  own `AbstractTerm` subclass, `parent` still resolved to that subclass
+  directly rather than through the swappable setting, so its `deconstruct()`
+  output permanently disagreed with the package's frozen migration state
+  (which targets `settings.ICV_TAXONOMY_TERM_MODEL`, the same as every other
+  FK to `Term`). This produced a spurious `AlterField` on `parent` under
+  `makemigrations --check`, purely from exercising the documented swap seam.
+
+  `AbstractTerm` now redeclares `parent` explicitly using the same
+  `getattr(django_settings, "ICV_TAXONOMY_TERM_MODEL", "icv_taxonomy.Term")`
+  pattern already used by `TermRelationship.term_from`/`term_to` and
+  `TermAssociation.term`, preserving every other kwarg (`null`, `blank`,
+  `on_delete=CASCADE`, `related_name="children"`, `db_index=True`,
+  `verbose_name`, `help_text`). No migration ships with this change: the
+  package's frozen migration state already targeted the swappable setting for
+  `parent`, so the model now simply agrees with it, under both the swapped
+  and unswapped (default) configurations.
+
+  Found while building the `tests/consumer` consumer smoke-test harness (#20,
+  ADR-027), which now gates on exactly this class of defect.
+
 ## [1.0.2] - 2026-08-10
 
 ### Fixed
