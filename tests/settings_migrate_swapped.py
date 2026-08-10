@@ -1,14 +1,20 @@
 """
-Django settings for the swappable-model migration regression test (issue
-#21, BR-TAX-050).
+Django settings for the swappable-model migration regression test (issues
+#21, #22; BR-TAX-050).
 
 Deliberately DOES declare ICV_TAXONOMY_VOCABULARY_MODEL and
-ICV_TAXONOMY_TERM_MODEL, pointed at appswap's own concrete subclasses of
+ICV_TAXONOMY_TERM_MODEL, pointed at zappswap's own concrete subclasses of
 AbstractVocabulary/AbstractTerm, and does NOT disable migrations for
-icv_taxonomy or appswap. This is the configuration of a consuming project
+icv_taxonomy or zappswap. This is the configuration of a consuming project
 that exercises the documented swappable-model seam. `migrate` and
 `makemigrations --check` must both succeed with no drift against this
 settings module; see test_migrations_swapped.py.
+
+The app label "zappswap" is deliberate: it sorts AFTER "icv_taxonomy"
+alphabetically. Without a swappable_dependency edge in icv_taxonomy's
+migrations (issue #22), `migrate` crashes here because Django's default
+app-processing order runs icv_taxonomy's migrations before zappswap's,
+even though icv_taxonomy's migrations FK to zappswap's models when swapped.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "icv_tree",
     "icv_taxonomy",
-    "appswap",
+    "zappswap",
 ]
 
 # icv-core is an optional extra; add it only when installed (mirrors
@@ -53,7 +59,7 @@ ICV_TREE_ENABLE_CTE = False
 ICV_TREE_REBUILD_BATCH_SIZE = 1000
 ICV_TREE_CHECK_ON_SAVE = False
 
-# The setting under test: point Term/Vocabulary at appswap's own subclasses,
+# The setting under test: point Term/Vocabulary at zappswap's own subclasses,
 # exactly as a real consuming project would.
-ICV_TAXONOMY_VOCABULARY_MODEL = "appswap.AppSwapVocabulary"
-ICV_TAXONOMY_TERM_MODEL = "appswap.AppSwapTerm"
+ICV_TAXONOMY_VOCABULARY_MODEL = "zappswap.AppSwapVocabulary"
+ICV_TAXONOMY_TERM_MODEL = "zappswap.AppSwapTerm"

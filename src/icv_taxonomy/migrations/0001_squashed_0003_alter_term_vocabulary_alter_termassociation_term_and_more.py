@@ -21,6 +21,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("contenttypes", "0002_remove_content_type_name"),
+        migrations.swappable_dependency(getattr(settings, "ICV_TAXONOMY_VOCABULARY_MODEL", "icv_taxonomy.Vocabulary")),
+        migrations.swappable_dependency(getattr(settings, "ICV_TAXONOMY_TERM_MODEL", "icv_taxonomy.Term")),
     ]
 
     operations = [

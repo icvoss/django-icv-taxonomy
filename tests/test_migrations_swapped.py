@@ -1,19 +1,30 @@
 """
-Regression test for issue #21 / BR-TAX-050: `Term.parent` must resolve
-through `ICV_TAXONOMY_TERM_MODEL`, not TreeNode's `to="self"`, so that
-`makemigrations --check` reports no drift when a consuming project swaps in
-its own AbstractTerm subclass.
+Regression tests for issue #21 (BR-TAX-050) and issue #22.
 
-Before the fix, AbstractTerm inherited `parent` unmodified from
-icv_tree.models.TreeNode. `to="self"` resolved directly to the swapped
-subclass rather than through the swappable setting, so its deconstruct()
-output permanently disagreed with the package's frozen migration state
-(which targets settings.ICV_TAXONOMY_TERM_MODEL), producing a spurious
-AlterField on `parent` purely from exercising the swap seam.
+Issue #21: `Term.parent` must resolve through `ICV_TAXONOMY_TERM_MODEL`, not
+TreeNode's `to="self"`, so that `makemigrations --check` reports no drift
+when a consuming project swaps in its own AbstractTerm subclass. Before the
+fix, AbstractTerm inherited `parent` unmodified from icv_tree.models.TreeNode.
+`to="self"` resolved directly to the swapped subclass rather than through the
+swappable setting, so its deconstruct() output permanently disagreed with the
+package's frozen migration state (which targets
+settings.ICV_TAXONOMY_TERM_MODEL), producing a spurious AlterField on
+`parent` purely from exercising the swap seam.
 
-This test runs Django management commands in a subprocess against
+Issue #22: icv_taxonomy's migrations FK to the swappable Term/Vocabulary
+models via `getattr(settings, "ICV_TAXONOMY_*_MODEL", ...)` but declared no
+`migrations.swappable_dependency(...)` edge, so nothing forced the swap
+app's migrations to run before icv_taxonomy's. If the swap app's label sorts
+AFTER "icv_taxonomy" (as "zappswap" deliberately does), `migrate` crashed
+with `ValueError: Related model 'zappswap.appswapterm' cannot be resolved`.
+The package's own fixture used to be named "appswap", which sorts BEFORE
+"icv_taxonomy" and so took the working path by accident of alphabetical
+ordering, masking the bug. Renaming it to "zappswap" makes this module a
+real regression guard rather than an accidental pass.
+
+Both tests run Django management commands in a subprocess against
 tests/settings_migrate_swapped.py, which declares ICV_TAXONOMY_TERM_MODEL /
-ICV_TAXONOMY_VOCABULARY_MODEL pointed at tests/appswap's own subclasses and
+ICV_TAXONOMY_VOCABULARY_MODEL pointed at tests/zappswap's own subclasses and
 enables real migrations, to genuinely exercise the migration files rather
 than the main suite's MIGRATION_MODULES=None shortcut (tests/settings.py).
 """
@@ -52,11 +63,20 @@ def _run_django_command(*args: str) -> subprocess.CompletedProcess[str]:
 def test_migrate_succeeds_with_term_model_swapped() -> None:
     """`migrate` must apply cleanly when ICV_TAXONOMY_TERM_MODEL points at a
     consuming project's own AbstractTerm subclass.
+
+    Also the regression test for issue #22: "zappswap" sorts AFTER
+    "icv_taxonomy" alphabetically, so this only passes if icv_taxonomy's
+    migrations carry a swappable_dependency edge forcing zappswap's
+    migrations to run first. Without that edge, this fails with
+    `ValueError: Related model 'zappswap.appswapterm' cannot be resolved`.
     """
     result = _run_django_command("migrate", "--noinput")
 
     assert result.returncode == 0, (
         f"migrate failed with ICV_TAXONOMY_TERM_MODEL swapped:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "cannot be resolved" not in result.stderr, (
+        f"migrate hit the issue #22 unresolved-related-model crash:\nstderr:\n{result.stderr}"
     )
 
 
