@@ -57,6 +57,9 @@ Changelog = "https://github.com/icvoss/django-icv-taxonomy/blob/main/CHANGELOG.m
 "Issue Tracker" = "https://github.com/icvoss/django-icv-taxonomy/issues"
 "Source Code" = "https://github.com/icvoss/django-icv-taxonomy"
 
+[tool.setuptools.package-data]
+icv_taxonomy = ["py.typed"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
