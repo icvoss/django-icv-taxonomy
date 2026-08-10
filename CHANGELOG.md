@@ -11,12 +11,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- **Re-releases the `Term.path` migration that 1.0.1 was meant to carry.** The
-  `v1.0.1` tag was cut before the `0005_alter_term_path` commit landed on
-  `main`, so the published 1.0.1 artefact does not contain the migration its
-  own changelog entry described. Consumers on 1.0.1 still saw
-  `makemigrations --check` drift. No code change over 1.0.1; this release
-  exists to ship the migration. The original entry follows, unaltered.
+- **No-op release. Its original entry was wrong and is corrected here.** 1.0.2
+  was cut on the mistaken belief that the published 1.0.1 artefact lacked
+  `0005_alter_term_path`. It does not: 1.0.1 shipped that migration correctly,
+  as does its git tag. The consumer failure that prompted this release came from
+  a stale pin (`django-icv-taxonomy==1.0.0`, predating the fix), not from a
+  missing artefact. There is no code difference between 1.0.1 and 1.0.2, and
+  nothing needs upgrading from 1.0.1. Left published rather than yanked.
 
 ## [1.0.1] - 2026-08-09
 
