@@ -67,3 +67,74 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: settings
           PYTHONPATH: src:tests
+
+  # ── Consumer smoke-test gate (ADR-027) ───────────────────────────────
+  # Installs this package as a BUILT WHEEL (not editable) into a fresh venv
+  # and runs the checks a real installing project runs against a throwaway
+  # consumer under tests/consumer/. Catches defects that only a consumer
+  # surfaces after release: unmigrated model/manager changes, migration
+  # breakage, and failure to typecheck clean under django-stubs.
+  #
+  # The consumer project (tests/consumer/) must use this package the way real
+  # consumers do: swappable models configured, documented mixins/bases used,
+  # or it tests nothing. See ADR-027 and the RELEASING.md gate section.
+  #
+  # DELETE this whole job unless the package ships a tests/consumer/ harness:
+  # a non-Django package has nothing to smoke-test, and a package that has not
+  # yet built its consumer harness (a pre-1.0 checkpoint) adds it when it
+  # approaches release. Leaving this job in without tests/consumer/ present
+  # fails every run.
+  #
+  # The mypy pin below defaults to a valid, current pair so the workflow parses
+  # out of the box; update both versions to the [dev] extra in pyproject.toml
+  # and set the advisory flag deliberately.
+  smoke-test:
+    name: Consumer smoke-test (makemigrations / migrate / mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Build wheel and install as a consumer would
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist/
+          pip install dist/*.whl
+          pip install "Django~=5.2.0"
+          # Declared mypy / django-stubs pair (keep in step with the [dev]
+          # extra in pyproject.toml and the RELEASING.md gate section).
+          pip install "mypy>=1.11" "django-stubs[compatible-mypy]>=5.1"
+
+      # A library must import before Django settings are configured. Runs in a
+      # bare environment (no DJANGO_SETTINGS_MODULE, no django.setup()); fails
+      # if any module reads settings at import time (a common defect: settings
+      # access belongs in function bodies via a get_setting helper, not at
+      # module top level). Caught here, not by the makemigrations/migrate legs
+      # below, which configure settings first.
+      - name: import icv_taxonomy with no settings configured
+        run: python -c "import icv_taxonomy; print(icv_taxonomy.__version__)"
+        env:
+          DJANGO_SETTINGS_MODULE: ""
+
+      - name: makemigrations --check (no unmigrated changes ship)
+        run: python manage.py makemigrations --check --dry-run
+        working-directory: tests/consumer
+
+      - name: migrate on a fresh DB (no migration-ordering breakage)
+        run: python manage.py migrate --noinput
+        working-directory: tests/consumer
+
+      # Set continue-on-error to false once this package typechecks clean in a
+      # consumer (flip it in the same release that ships the typing fix, and
+      # update the advisory note in RELEASING.md). Until then it is advisory so
+      # the migrate/makemigrations legs still gate. Defaults to advisory (true)
+      # so a fresh scaffold is not blocked on a typing pass it has not done yet.
+      - name: mypy with django-stubs (package typechecks clean in a consumer)
+        continue-on-error: true
+        run: mypy .
+        working-directory: tests/consumer
