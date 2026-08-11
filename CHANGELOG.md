@@ -11,6 +11,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **`get_terms_for_object()` and `get_terms_for_object_typed()` docstrings
+  no longer promise association order** (#25). The functions have always
+  returned terms in the Term model's default tree path order: the
+  association queryset's ordering is discarded by the `pk__in` subquery, so
+  the documented "ordered by association order and creation time" was never
+  delivered. The docstrings now state the real contract, and the dead
+  `order_by("order", "created_at")` on the subquery has been removed
+  (behaviour unchanged). Association-order retrieval can be added later as
+  an explicit opt-in if a consumer needs it.
 - **Migrations that FK to the swappable `Term`/`Vocabulary` models now carry
   a `swappable_dependency` edge** (#22). The migrations resolved the FK
   target via `getattr(settings, "ICV_TAXONOMY_*_MODEL", ...)` but declared
