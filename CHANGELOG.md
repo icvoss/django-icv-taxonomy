@@ -9,6 +9,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **Behaviour changing:** the bundled fallback `_BASE` model (used when
+  django-icv-core is not installed) no longer sets a default
+  `Meta.ordering` (ADR-066). A `Meta.ordering` on a shared base defeats
+  `values()`/`values_list()` combined with `distinct()` in every inheriting
+  model. `AbstractVocabulary` (`ordering = ["name"]`) and `AbstractTerm`
+  (`ordering = ["path"]`) already declare their own explicit `ordering`, so
+  neither loses its current sort order and no compensating changes were
+  needed. `AbstractTermRelationship`/`TermRelationship` do not inherit
+  `_BASE` and are unaffected.
+
 ### Fixed
 
 - **`get_terms_for_object()` and `get_terms_for_object_typed()` docstrings
