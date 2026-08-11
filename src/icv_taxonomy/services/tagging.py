@@ -486,7 +486,7 @@ def cleanup_orphaned_associations(
     else:
         content_types_to_check = list(
             ContentType.objects.filter(
-                pk__in=TermAssociation.objects.values_list("content_type_id", flat=True).distinct()
+                pk__in=TermAssociation.objects.order_by().values_list("content_type_id", flat=True).distinct()
             )
         )
 
@@ -510,7 +510,7 @@ def cleanup_orphaned_associations(
         # Collect orphaned object_ids.
         orphaned_object_ids = [
             oid
-            for oid in assocs_for_type.values_list("object_id", flat=True).distinct()
+            for oid in assocs_for_type.order_by().values_list("object_id", flat=True).distinct()
             if str(oid) not in {str(pk) for pk in existing_ids}
         ]
 

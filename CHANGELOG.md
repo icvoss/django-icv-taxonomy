@@ -64,6 +64,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Found while building the `tests/consumer` consumer smoke-test harness (#20,
   ADR-027), which now gates on exactly this class of defect.
 
+- **`cleanup_orphaned_associations()` no longer under-counts orphans when an
+  object carries more than one term.** Both `values_list(...).distinct()`
+  calls in the cleanup loop relied on Django's automatic `DISTINCT` without
+  first clearing queryset ordering. `TermAssociation`'s default ordering is
+  `["order", "created_at"]` (BR-TAX-044), which Django appends to the
+  `SELECT` unless explicitly cleared, so `DISTINCT` was applied to the
+  `(object_id, order, created_at)` tuple rather than `object_id` alone. Since
+  `order` increments per association on the same object (BR-TAX-019) and
+  `created_at` is `auto_now_add`, an orphaned object with several
+  associations returned the same `object_id` once per association instead of
+  once per object, feeding a duplicated value into the follow-up
+  `object_id__in=...` filter. The final counts happened to still be correct,
+  because SQL `IN` deduplicates its list, but the intermediate work was
+  needlessly repeated per association rather than per object. Both call
+  sites now insert `.order_by()` before `.distinct()` to clear the inherited
+  ordering first.
+
 ## [1.0.2] - 2026-08-10
 
 ### Fixed
