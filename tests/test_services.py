@@ -1002,6 +1002,90 @@ class TestCleanupOrphanedAssociations:
         TermAssociation = apps.get_model("icv_taxonomy", "TermAssociation")
         assert not TermAssociation.objects.filter(term=term).exists()
 
+    def test_distinct_object_ids_not_defeated_by_default_ordering(self, db):
+        """values_list(...).distinct() on object_id collapses to one row per
+        orphaned object even though TermAssociation's default ordering is
+        ``["order", "created_at"]`` (BR-TAX-044).
+
+        Without ``.order_by()`` clearing that default before ``.distinct()``,
+        Django appends ``order`` and ``created_at`` to the SELECT, so DISTINCT
+        applies to the (object_id, order, created_at) tuple. An object tagged
+        with more than one term has a different ``order`` per association
+        (BR-TAX-019 appends), so the tuple never collapses and the same
+        object_id comes back once per association instead of once per
+        object.
+        """
+        from django.apps import apps
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        from taxonomy_testapp.models import Article
+
+        from icv_taxonomy.services import (
+            cleanup_orphaned_associations,
+            create_term,
+            create_vocabulary,
+            tag_object,
+        )
+
+        vocab = create_vocabulary(name="Tags", vocabulary_type="flat", allow_multiple=True)
+        term_a = create_term(vocabulary=vocab, name="Tag A")
+        term_b = create_term(vocabulary=vocab, name="Tag B")
+
+        # Tag ONE article with TWO terms. tag_object() appends order
+        # (BR-TAX-019), so this yields two TermAssociation rows for the same
+        # object_id with different `order` values (0 and 1) and, since
+        # created_at is auto_now_add, different created_at values too.
+        article = Article.objects.create(title="To Delete")
+        tag_object(term_a, article)
+        tag_object(term_b, article)
+
+        TermAssociation = apps.get_model("icv_taxonomy", "TermAssociation")
+        article_pk = str(article.pk)
+        assert TermAssociation.objects.filter(content_type__model="article", object_id=article_pk).count() == 2
+
+        # Delete the article, leaving both associations orphaned. Django
+        # clears article.pk to None after delete(), so the pk was captured
+        # above, before deletion, not re-read afterwards.
+        article.delete()
+
+        with CaptureQueriesContext(connection) as ctx:
+            result = cleanup_orphaned_associations(model_class=Article)
+
+        # Functional outcome: both orphaned rows for the single deleted
+        # object are found and removed.
+        assert result["orphaned"] == 2
+        assert result["removed"] == 2
+        assert not TermAssociation.objects.filter(term__in=[term_a, term_b]).exists()
+
+        # Query-shape outcome: the SELECT DISTINCT query built from
+        # ``.values_list("object_id", flat=True).distinct()`` must itself
+        # collapse to ONE row for the single orphaned object, not one row
+        # per association. This is the only place the tuple-distinct defeat
+        # is observable: Django's `__in=[...]` lookup deduplicates its
+        # Python list client-side before building the downstream filter/
+        # delete query, so counting matches in that query's `IN (...)`
+        # clause cannot detect the defect (it always renders each value
+        # once, fixed or not). The DISTINCT query's own emitted SQL and row
+        # count are what changes: without ``.order_by()`` clearing the
+        # model's default ordering (``["order", "created_at"]``, BR-TAX-044)
+        # before ``.distinct()``, Django appends those columns to the
+        # SELECT, so DISTINCT applies to the (object_id, order, created_at)
+        # tuple and the single object_id is returned twice, once per
+        # association row with its distinct `order` value.
+        distinct_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "icv_taxonomy_termassociation" in q["sql"].lower() and "distinct" in q["sql"].lower()
+        ]
+        assert distinct_queries, (
+            f"expected a SELECT DISTINCT object_id query; captured: {[q['sql'] for q in ctx.captured_queries]}"
+        )
+        (distinct_sql,) = distinct_queries
+        assert '"order"' not in distinct_sql and '"created_at"' not in distinct_sql, (
+            "the object_id distinct query still selects the model's default-ordering "
+            f"columns, so DISTINCT applies to the wrong tuple: {distinct_sql}"
+        )
+
     def test_dry_run_does_not_delete(self, db):
         """dry_run=True reports orphans without deleting them."""
         from django.apps import apps
