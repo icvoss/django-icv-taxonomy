@@ -225,9 +225,13 @@ def get_terms_for_object(
             Ignored if ``vocabulary`` is provided.
 
     Returns:
-        A QuerySet of Term instances ordered by association order and
-        creation time. Uses ``select_related("vocabulary")`` to avoid N+1
-        queries when accessing vocabulary attributes.
+        A QuerySet of Term instances in the Term model's default ordering
+        (tree path order, so depth-first traversal). The association's
+        ``order`` field does not influence the result: the terms are
+        resolved through a ``pk__in`` subquery, which discards any ordering
+        applied to the association queryset. Uses
+        ``select_related("vocabulary")`` to avoid N+1 queries when
+        accessing vocabulary attributes.
 
     Side effects:
         None (pure read).
@@ -240,7 +244,7 @@ def get_terms_for_object(
     ct = ContentType.objects.get_for_model(obj)
     object_id = _str_pk(obj)
 
-    assoc_qs = TermAssociation.objects.filter(content_type=ct, object_id=object_id).order_by("order", "created_at")
+    assoc_qs = TermAssociation.objects.filter(content_type=ct, object_id=object_id)
 
     term_ids = assoc_qs.values_list("term_id", flat=True)
     qs = Term.all_objects.filter(pk__in=term_ids).select_related("vocabulary")
@@ -404,7 +408,8 @@ def get_terms_for_object_typed(
 
     For high-volume use cases where the generic ``TermAssociation`` FK
     overhead is unacceptable. Queries the typed M2M through table generated
-    by ``create_term_m2m()`` using direct FK joins — no GenericFK resolution.
+    by ``create_term_m2m()`` using direct FK joins, with no GenericFK
+    resolution.
 
     Falls back to ``get_terms_for_object()`` if ``through_model`` is None.
 
@@ -415,7 +420,9 @@ def get_terms_for_object_typed(
         vocabulary: Optional Vocabulary to restrict results to.
 
     Returns:
-        A QuerySet of Term instances joined via the typed through table.
+        A QuerySet of Term instances joined via the typed through table,
+        in the Term model's default ordering (tree path order); the
+        through table's ``order`` field does not influence the result.
 
     Side effects:
         None (pure read).
