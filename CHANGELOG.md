@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-12
+
 ### Changed
 
 - **Behaviour changing:** the bundled fallback `_BASE` model (used when
@@ -84,6 +86,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
   Found while building the `tests/consumer` consumer smoke-test harness (#20,
   ADR-027), which now gates on exactly this class of defect.
+
+  This change also resolves the `makemigrations` oscillation reported
+  independently by a swapping consumer on 1.0.2 (#31): with the inherited
+  `to="self"` FK, migration state resolved the swapped-out `Term.parent`
+  through the swappable setting while the live registry resolved it to the
+  package model, so the autodetector emitted a non-converging `AlterField`
+  on every run and no generated or hand-authored migration could reconcile
+  the two, even with the consumer owning the migration module via
+  `MIGRATION_MODULES`. With `parent` redeclared through
+  `ICV_TAXONOMY_TERM_MODEL`, state and registry agree in both the swapped
+  and default configurations. Regression coverage:
+  `tests/test_migrations_swapped.py` asserts `makemigrations --check
+  --dry-run` is clean with the term model swapped into an app
+  (`tests/zappswap`) whose label deliberately sorts after `icv_taxonomy`.
 
 - **`cleanup_orphaned_associations()` no longer under-counts orphans when an
   object carries more than one term.** Both `values_list(...).distinct()`
