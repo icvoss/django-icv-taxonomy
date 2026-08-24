@@ -17,7 +17,6 @@ Provides:
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
 from django.conf import settings as django_settings
@@ -29,6 +28,8 @@ from django.db.models.signals import class_prepared
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from icv_tree.models import TreeManager, TreeNode, TreeQuerySet
+
+from .conf import get_base_model
 
 if TYPE_CHECKING:
     pass
@@ -90,41 +91,16 @@ def _attach_vocabulary_uniqueness(sender, **kwargs) -> None:
 class_prepared.connect(_attach_vocabulary_uniqueness)
 
 # ------------------------------------------------------------------
-# Optional icv-core base model (ADR-007 pattern)
+# Model base, resolved from settings (ADR-052)
 # ------------------------------------------------------------------
 
-try:
-    from icv_core.models import BaseModel as _CoreBaseModel
-
-    _BASE = _CoreBaseModel
-except ImportError:
-
-    class _BASE(models.Model):  # type: ignore[no-redef,misc]
-        """Standalone base model when icv-core is not installed.
-
-        Provides the same UUID primary key and timestamp fields as
-        ``icv_core.models.BaseModel`` so icv-taxonomy can be used without
-        django-icv-core as a dependency.
-        """
-
-        id = models.UUIDField(
-            primary_key=True,
-            default=uuid.uuid4,
-            editable=False,
-            verbose_name=_("ID"),
-        )
-        created_at = models.DateTimeField(
-            auto_now_add=True,
-            db_index=True,
-            verbose_name=_("created at"),
-        )
-        updated_at = models.DateTimeField(
-            auto_now=True,
-            verbose_name=_("updated at"),
-        )
-
-        class Meta:
-            abstract = True
+# Resolved once at class-definition time, because the models below inherit
+# it. Consumers choose the base explicitly via ICV_TAXONOMY_BASE_MODEL or
+# ICV_BASE_MODEL; the bundled icv_taxonomy._compat.BaseModel is the default.
+# This replaces the ADR-007 try/except icv_core import, under which the base
+# changed silently depending on whether django-icv-core happened to be
+# installed.
+_BASE = get_base_model()
 
 
 # ------------------------------------------------------------------
@@ -369,8 +345,9 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
     """Abstract term model.
 
     Inherits ``TreeNode`` (hard dependency on icv-tree) for materialised-path
-    tree behaviour and optionally ``BaseModel`` (uuid PK + timestamps) when
-    icv-core is installed.
+    tree behaviour and the ADR-052 model base resolved from settings
+    (``ICV_TAXONOMY_BASE_MODEL`` / ``ICV_BASE_MODEL``), which supplies the
+    UUID primary key and timestamps.
 
     A term belongs to exactly one vocabulary. Slug uniqueness is enforced within
     a vocabulary, not globally. Parent must be in the same vocabulary.

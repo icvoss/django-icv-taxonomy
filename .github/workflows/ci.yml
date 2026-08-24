@@ -68,6 +68,80 @@ jobs:
           DJANGO_SETTINGS_MODULE: settings
           PYTHONPATH: src:tests
 
+  # ── ADR-052 dual-base gate ────────────────────────────────────────
+  # The model base resolves from ICV_TAXONOMY_BASE_MODEL / ICV_BASE_MODEL.
+  # Both resolutions must produce the SAME migration state, because the
+  # bundled _compat.BaseModel is byte-compatible with icv-core's BaseModel.
+  #
+  # Leg (b) is the one that matters: a kwarg dropped from _compat (the
+  # bare-timestamp drift seen elsewhere in the fleet) leaves package CI
+  # green and fails in the CONSUMER, whose next makemigrations --check
+  # emits a compensating AlterField that DROPS a live index on created_at.
+  # Nothing else in this workflow installs django-icv-core, so without this
+  # job the icv-core resolution path is never executed.
+  base-model:
+    name: ADR-052 base model (default and icv-core)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-django pytest-cov pytest-mock factory-boy
+          pip install -e .
+
+      - name: Base-model tests (bundled default)
+        run: pytest tests/test_base_model.py -v --tb=short --color=yes
+        env:
+          DJANGO_SETTINGS_MODULE: settings
+          PYTHONPATH: src:tests
+
+      # (a) Default resolution: no setting, bundled _compat.BaseModel.
+      - name: makemigrations --check with the bundled base
+        run: python -m django makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: settings_migrate_defaults
+          PYTHONPATH: src:tests
+
+      - name: Install django-icv-core
+        run: pip install django-icv-core
+
+      # Guard against a vacuous pass: if the settings module below failed to
+      # resolve the icv-core base, the following check would pass for the
+      # wrong reason. Assert the base is genuinely in the model MRO first.
+      - name: Assert the icv-core base is actually resolved
+        run: |
+          python -c "
+          import django; django.setup()
+          from icv_taxonomy.models import Vocabulary
+          mro = [c.__module__ for c in Vocabulary.__mro__]
+          assert any(m.startswith('icv_core') for m in mro), f'icv-core base NOT in MRO, the seam is inert: {mro}'
+          print('icv-core base resolved:', [m for m in mro if m.startswith('icv_core')])
+          "
+        env:
+          DJANGO_SETTINGS_MODULE: settings_migrate_core_base
+          PYTHONPATH: src:tests
+
+      # (b) icv-core resolution: byte-compatibility means no diff here either.
+      - name: makemigrations --check with the icv-core base
+        run: python -m django makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: settings_migrate_core_base
+          PYTHONPATH: src:tests
+
+      - name: Full suite with django-icv-core installed
+        run: pytest tests/ -v --tb=short --color=yes
+        env:
+          DJANGO_SETTINGS_MODULE: settings
+          PYTHONPATH: src:tests
+
   # ── Consumer smoke-test gate (ADR-027) ───────────────────────────────
   # Installs this package as a BUILT WHEEL (not editable) into a fresh venv
   # and runs the checks a real installing project runs against a throwaway

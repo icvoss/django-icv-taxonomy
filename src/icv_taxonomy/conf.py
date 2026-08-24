@@ -43,6 +43,34 @@ def get_term_model():  # type: ignore[no-untyped-def]
     return apps.get_model(app_label, model_name)
 
 
+def get_base_model():  # type: ignore[no-untyped-def]
+    """Return the abstract model base every icv-taxonomy model inherits (ADR-052).
+
+    Resolution order:
+
+    1. ``ICV_TAXONOMY_BASE_MODEL``, this package only.
+    2. ``ICV_BASE_MODEL``, the shared stack-wide base.
+    3. ``icv_taxonomy._compat.BaseModel``, the bundled default.
+
+    Uses ``import_string`` rather than ``apps.get_model``: the target is an
+    ABSTRACT model, which has no app label or model name and so is not in
+    the app registry.
+
+    Called at class-definition time, unlike the other accessors here, since
+    a base class must be resolved before the models that inherit it exist.
+    That is why it reads settings inside the function body: the module must
+    still import when Django is unconfigured.
+    """
+    from django.utils.module_loading import import_string
+
+    path = (
+        get_setting("ICV_TAXONOMY_BASE_MODEL", None)
+        or get_setting("ICV_BASE_MODEL", None)
+        or "icv_taxonomy._compat.BaseModel"
+    )
+    return import_string(path)
+
+
 # ------------------------------------------------------------------
 # Model swapping
 # ------------------------------------------------------------------
