@@ -37,6 +37,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   that structurally cannot fail trains consumers to skip the checks that
   can. The 1.0.0 entry now carries a pointer to the cumulative notes.
 
+- **`MANIFEST.in`, so `UPGRADING.md` ships in the sdist.** An upgrade guide
+  reachable only from a GitHub blob is unreachable exactly when it is most
+  needed: by someone reading an installed artefact, or working offline.
+  `CHANGELOG.md` and `SECURITY.md` are carried for the same reason. The
+  wheel does not conventionally carry these and still does not; the README
+  keeps its link, so the two routes are complementary. Verified on the built
+  artefact rather than assumed.
+
 ## [1.0.3] - 2026-08-12
 
 ### Changed

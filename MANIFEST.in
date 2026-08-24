@@ -1,0 +1,9 @@
+# Files carried in the sdist beyond what setuptools includes by default.
+# UPGRADING.md is the cumulative upgrade guide the README links: it has to
+# be reachable from an installed artefact, not only from a GitHub blob,
+# because the consumer who most needs it is the one reading what they have
+# already downloaded.
+include UPGRADING.md
+include CHANGELOG.md
+include LICENSE
+include SECURITY.md
