@@ -9,6 +9,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-24
+
+
 ### Changed
 
 - **The model base is now resolved from a setting, not from whether
