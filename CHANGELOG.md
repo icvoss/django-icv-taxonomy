@@ -9,6 +9,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **The model base is now resolved from a setting, not from whether
+  django-icv-core happens to be installed** (#7, ADR-052).
+
+  **What changes for you.** If you install django-icv-core and relied on
+  icv-taxonomy detecting it automatically, you must now say so explicitly,
+  once:
+
+  ```python
+  ICV_BASE_MODEL = "icv_core.models.BaseModel"
+  ```
+
+  Everyone else does nothing. If you do not install icv-core, or you
+  install it without setting the above, behaviour is unchanged.
+
+  **No migration is generated either way, and none is needed.** The bundled
+  default (`icv_taxonomy._compat.BaseModel`) is field-for-field
+  byte-compatible with icv-core's `BaseModel`, so both resolutions produce
+  an identical model state. Verified by running `makemigrations --check` on
+  both legs, with django-icv-core genuinely installed for the second; both
+  report no changes. A new CI job (`ADR-052 base model`) now gates exactly
+  that, and asserts the icv-core base is really in the model's MRO first so
+  the check cannot pass for the wrong reason.
+
+  **Why the old behaviour was worth removing.** Under the previous
+  `try/except ImportError` (ADR-007), the base silently depended on whether
+  another package was importable. Adding django-icv-core for an unrelated
+  reason, or a transitive dependency pulling it in, changed the base of
+  every taxonomy model without anything in the project saying so. The
+  resolution order is now explicit: `ICV_TAXONOMY_BASE_MODEL`, then
+  `ICV_BASE_MODEL`, then the bundled default.
+
+  A new system check, `icv_taxonomy.E003`, reports a base that is
+  unimportable, is not a Django model, or is concrete rather than abstract.
+  The concrete case previously failed deep inside Django's model machinery
+  with an error that never named the setting responsible.
+
 ### Added
 
 - **Django 6.1 added to the CI test matrix** and declared via the
