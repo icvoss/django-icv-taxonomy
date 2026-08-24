@@ -79,7 +79,7 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 
 - Python 3.11+
 - Django 5.1+
-- [django-icv-tree](https://github.com/icvoss/django-icv-tree) >= 0.2.0
+- [django-icv-tree](https://github.com/icvoss/django-icv-tree) >= 1.0.0
 - `django.contrib.contenttypes` (for generic tagging)
 
 Optional:
@@ -111,6 +111,13 @@ Run migrations:
 ```bash
 python manage.py migrate
 ```
+
+### Upgrading an existing install
+
+[UPGRADING.md](https://github.com/icvoss/django-icv-taxonomy/blob/main/UPGRADING.md)
+carries cumulative upgrade notes, indexed by the version you are moving
+**from**. Read it when crossing more than one release, since the CHANGELOG
+entry for the version you are moving *to* only covers the step before it.
 
 ---
 

@@ -14,6 +14,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Django 6.1 added to the CI test matrix** and declared via the
   `Framework :: Django :: 6.1` classifier.
 
+- **`UPGRADING.md`: cumulative upgrade notes, indexed by the version you are
+  moving *from*** (#11). The 1.0.0 entry listed only what changed since
+  0.6.0, so a consumer upgrading 0.5.1 to 1.0.0 read it as "bug fixes only"
+  and never saw 0.6.0's entry. Two separate agents in a fleet pin sweep
+  reached that conclusion independently, and it took diffing the shipped
+  migrations to find that `0004_vocabulary_scope_field_uniqueness` also
+  applies `UniqueConstraint`s.
+
+  The new file documents 0.5.x to 1.0.x cumulatively, including the fact
+  that **migration 0004 cannot fail on existing data**: it replaces the
+  field-level `unique=True` that 0.5.x already carried on
+  `Vocabulary.name`/`.slug` with equivalent named constraints on the same
+  two columns, so the duplicate rows it would reject were never
+  representable. It records the real operational property instead (each
+  `ADD CONSTRAINT ... UNIQUE` builds an index under an `ACCESS EXCLUSIVE`
+  lock, milliseconds on a realistically sized vocabulary table), and the
+  `django-icv-tree>=1.0.0` interaction that makes 1.0.1 the floor for anyone
+  running an unscoped `makemigrations --check`.
+
+  No pre-flight duplicate-hunting SQL is published, deliberately: a check
+  that structurally cannot fail trains consumers to skip the checks that
+  can. The 1.0.0 entry now carries a pointer to the cumulative notes.
+
 ## [1.0.3] - 2026-08-12
 
 ### Changed
@@ -160,6 +183,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ---
 
 ## [1.0.0] - 2026-08-09
+
+> **Upgrading from 0.5.x or earlier?** This entry lists only what changed
+> since 0.6.0. The 0.x to 1.0 jump is where consumers skip intermediate
+> entries, so the cumulative notes live in [UPGRADING.md](UPGRADING.md).
+> Short version: no action is required, and migration
+> `0004_vocabulary_scope_field_uniqueness` (from 0.6.0) cannot fail on your
+> data, despite adding `UniqueConstraint`s. It replaces the field-level
+> `unique=True` that 0.5.x already had on the same two columns, so the
+> duplicates it would reject were never representable.
 
 ### Fixed
 
