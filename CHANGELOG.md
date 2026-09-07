@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-07
+
 ### Fixed
 
 - **`icv_taxonomy.conf` no longer reads settings at import time** (#36).
