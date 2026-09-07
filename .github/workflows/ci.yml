@@ -189,8 +189,24 @@ jobs:
       # access belongs in function bodies via a get_setting helper, not at
       # module top level). Caught here, not by the makemigrations/migrate legs
       # below, which configure settings first.
+      #
+      # icv_taxonomy/__init__.py alone is a narrow guard: it does not import
+      # .conf, so it cannot catch a module-level settings read there (#36).
+      # Widened to also import every submodule that can legitimately import
+      # unconfigured. models, _compat, apps, admin and handlers are excluded
+      # on purpose: they define or reference concrete/abstract Django model
+      # classes (directly, or via contenttypes.GenericForeignKey), which
+      # requires the app registry and therefore INSTALLED_APPS regardless of
+      # anything this package does. That is a property of Django's model
+      # machinery, not a settings-at-import-time defect in this package.
       - name: import icv_taxonomy with no settings configured
-        run: python -c "import icv_taxonomy; print(icv_taxonomy.__version__)"
+        run: |
+          python -c "import icv_taxonomy; print(icv_taxonomy.__version__)"
+          python -c "import icv_taxonomy.conf"
+          python -c "import icv_taxonomy.checks"
+          python -c "import icv_taxonomy.exceptions"
+          python -c "import icv_taxonomy.signals"
+          python -c "import icv_taxonomy.tasks"
         env:
           DJANGO_SETTINGS_MODULE: ""
 

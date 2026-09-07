@@ -2,9 +2,17 @@
 icv-taxonomy package settings.
 
 All settings use the ICV_TAXONOMY_* prefix and are evaluated at call time via
-get_setting() to respect pytest settings fixture overrides. Never import these
-module-level constants into other modules — always call get_setting() inside
-function bodies.
+get_setting() to respect pytest settings fixture overrides. Inside this
+package, always call get_setting() (or one of the get_*_model() helpers)
+inside function bodies, never a module-level constant.
+
+For backwards compatibility, the six ICV_TAXONOMY_* names below are also
+exposed as module attributes (e.g. ``conf.ICV_TAXONOMY_AUTO_SLUG``). These
+are resolved lazily via module-level ``__getattr__`` (PEP 562): each access
+reads the current Django setting rather than a value bound once at import
+time. This means the module imports cleanly even when Django settings are
+not yet configured, and each access reflects override_settings() or the
+pytest settings fixture rather than a stale first-import value.
 """
 
 from __future__ import annotations
@@ -72,34 +80,42 @@ def get_base_model():  # type: ignore[no-untyped-def]
 
 
 # ------------------------------------------------------------------
-# Model swapping
+# Setting names, defaults, and their meaning.
+#
+# Each is exposed as a module attribute via __getattr__ below, and can
+# always be read via get_setting(name, default) inside a function body.
 # ------------------------------------------------------------------
 
-# Dotted model path for the Vocabulary model. Supports swapping via
-# AUTH_USER_MODEL-style indirection.
-ICV_TAXONOMY_VOCABULARY_MODEL: str = getattr(settings, "ICV_TAXONOMY_VOCABULARY_MODEL", "icv_taxonomy.Vocabulary")
+_DEFAULTS: dict[str, object] = {
+    # Model swapping: dotted model paths, AUTH_USER_MODEL-style.
+    "ICV_TAXONOMY_VOCABULARY_MODEL": "icv_taxonomy.Vocabulary",
+    "ICV_TAXONOMY_TERM_MODEL": "icv_taxonomy.Term",
+    # Slug behaviour.
+    # AUTO_SLUG: auto-generate slug from name when slug is blank on save (BR-TAX-043).
+    "ICV_TAXONOMY_AUTO_SLUG": True,
+    # SLUG_MAX_LENGTH: maximum length for auto-generated slugs.
+    "ICV_TAXONOMY_SLUG_MAX_LENGTH": 255,
+    # CASE_SENSITIVE_SLUGS: if False, slugs are lowercased on save (BR-TAX-034).
+    # If True, case is preserved.
+    "ICV_TAXONOMY_CASE_SENSITIVE_SLUGS": False,
+    # Validation: enforce that flat vocabulary terms must be root-level (no
+    # parent). Set to False to allow flat vocabularies to have nested terms
+    # for migration compatibility.
+    "ICV_TAXONOMY_ENFORCE_VOCABULARY_TYPE": True,
+}
 
-# Dotted model path for the Term model.
-ICV_TAXONOMY_TERM_MODEL: str = getattr(settings, "ICV_TAXONOMY_TERM_MODEL", "icv_taxonomy.Term")
 
-# ------------------------------------------------------------------
-# Slug behaviour
-# ------------------------------------------------------------------
+def __getattr__(name: str) -> object:  # PEP 562: lazy module attributes.
+    """Resolve ICV_TAXONOMY_* module attributes at ACCESS time, not import time.
 
-# If True, auto-generate slug from name when slug is blank on save (BR-TAX-043).
-ICV_TAXONOMY_AUTO_SLUG: bool = getattr(settings, "ICV_TAXONOMY_AUTO_SLUG", True)
-
-# Maximum length for auto-generated slugs.
-ICV_TAXONOMY_SLUG_MAX_LENGTH: int = getattr(settings, "ICV_TAXONOMY_SLUG_MAX_LENGTH", 255)
-
-# If False, slugs are lowercased on save (BR-TAX-034). If True, case is preserved.
-ICV_TAXONOMY_CASE_SENSITIVE_SLUGS: bool = getattr(settings, "ICV_TAXONOMY_CASE_SENSITIVE_SLUGS", False)
-
-# ------------------------------------------------------------------
-# Validation
-# ------------------------------------------------------------------
-
-# If True, enforce that flat vocabulary terms must be root-level (no parent).
-# Set to False to allow flat vocabularies to have nested terms for migration
-# compatibility.
-ICV_TAXONOMY_ENFORCE_VOCABULARY_TYPE: bool = getattr(settings, "ICV_TAXONOMY_ENFORCE_VOCABULARY_TYPE", True)
+    Kept for backwards compatibility with code that reads e.g.
+    ``icv_taxonomy.conf.ICV_TAXONOMY_AUTO_SLUG`` as a module attribute
+    rather than calling get_setting(). Each access re-reads the current
+    Django setting, so the value reflects override_settings() / the pytest
+    settings fixture, and the module still imports when Django settings
+    are not yet configured (the getattr() only runs when the attribute is
+    actually accessed).
+    """
+    if name in _DEFAULTS:
+        return get_setting(name, _DEFAULTS[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
