@@ -9,6 +9,76 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **`icv_taxonomy.conf` no longer reads settings at import time** (#36).
+  The six `ICV_TAXONOMY_*` module attributes (`ICV_TAXONOMY_VOCABULARY_MODEL`,
+  `ICV_TAXONOMY_TERM_MODEL`, `ICV_TAXONOMY_AUTO_SLUG`,
+  `ICV_TAXONOMY_SLUG_MAX_LENGTH`, `ICV_TAXONOMY_CASE_SENSITIVE_SLUGS`,
+  `ICV_TAXONOMY_ENFORCE_VOCABULARY_TYPE`) used to be bound via
+  `getattr(settings, ...)` at module import time, contradicting the
+  module's own documented rule that settings must be read at call time.
+  This meant `import icv_taxonomy.conf` raised `ImproperlyConfigured` if
+  Django settings were not yet configured, and, once bound, the values
+  were frozen at first import and silently ignored `override_settings()`
+  and the pytest `settings` fixture for the rest of the process.
+
+  These six names are now resolved lazily via a module-level `__getattr__`
+  (PEP 562): `icv_taxonomy.conf.ICV_TAXONOMY_AUTO_SLUG` still works exactly
+  as before, but each access re-reads the current Django setting rather
+  than a value bound once at import. No import path or public name
+  changed; no consumer action is needed. Every reader inside this package
+  already went through `get_setting()` / `get_vocabulary_model()` /
+  `get_term_model()` / `get_base_model()`, none of which read the
+  module-level constants, so this only affects consumers reading the
+  constants directly.
+
+  The "import icv_taxonomy with no settings configured" CI guard covered
+  only `icv_taxonomy/__init__.py`, which never imported `.conf`, so it
+  could not have caught this. It now also imports `icv_taxonomy.conf`,
+  `.checks`, `.exceptions`, `.signals` and `.tasks` unconfigured.
+  `.models`, `._compat`, `.apps`, `.admin` and `.handlers` are excluded:
+  they define or reference concrete/abstract Django model classes
+  (`.models` and `._compat` directly; `.admin` and `.handlers` transitively
+  via `.models`), which requires the Django app registry regardless of
+  anything in this package, so they cannot import unconfigured in any
+  case.
+
+- **Signals now fire for every concrete `AbstractVocabulary` /
+  `AbstractTerm` subclass, not only the swapped-in model** (#40). The
+  handler predicates tested `issubclass(sender, get_vocabulary_model())`,
+  the model resolved by `ICV_TAXONOMY_VOCABULARY_MODEL`, so a consumer
+  defining a second concrete subclass alongside it never received
+  `vocabulary_created`, `vocabulary_deleted`, `term_created` or
+  `term_deleted` for that model. A sibling subclass is not a subclass of
+  the resolved default, so it failed the test silently. The predicates now
+  check the abstract base, matching the rule `models.py` already applied
+  for uniqueness validation. Pre-existing, and unrelated to the per-sender
+  change above; it was found while testing it.
+
+- **Vocabulary/Term signal handlers now connect per sender, not bare**
+  (#40). Previously the four `post_save`/`pre_delete` handlers in
+  `handlers.py` registered with no `sender`, so they attached to every
+  model in a consuming project, not just Vocabulary and Term. Django's
+  `Collector.can_fast_delete()` returns `False` for any model with a
+  `pre_delete`/`post_delete` listener, so this silently removed the
+  fast-delete path (a single `DELETE ... WHERE`) from every queryset
+  `.delete()` on every unrelated model in a consumer project, replacing it
+  with a per-row fetch-then-delete-then-signal loop.
+
+  Consumers now regain Django's fast-delete path for models unrelated to
+  taxonomy. No change to when `vocabulary_created`, `vocabulary_deleted`,
+  `term_created`, or `term_deleted` fire for Vocabulary/Term models
+  themselves, including swapped-in models via `ICV_TAXONOMY_VOCABULARY_MODEL`
+  / `ICV_TAXONOMY_TERM_MODEL` and further subclasses of them.
+
+  Connection happens twice: from `IcvTaxonomyConfig.ready()`, covering
+  every model registered by then, and again on Django's `class_prepared`
+  signal, covering any Vocabulary or Term subclass defined afterwards (a
+  test-local model, one built dynamically at runtime). Both paths carry a
+  `dispatch_uid`, so a second `ready()` call under some test runners cannot
+  double-connect a handler.
+
 ### Added
 
 - **Guards D-G2 and D-G3 (ADR-074) for the swappable seam** (#41). D-G2
