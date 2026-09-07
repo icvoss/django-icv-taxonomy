@@ -60,6 +60,26 @@ def _run_django_command(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_django_command_script(script: str) -> subprocess.CompletedProcess[str]:
+    """Run an inline Python script against the migrate-swapped settings.
+
+    Same environment as _run_django_command, but for probes that need to
+    inspect state after a management command rather than only its exit code.
+    """
+    env = dict(os.environ)
+    env["DJANGO_SETTINGS_MODULE"] = "settings_migrate_swapped"
+    env["PYTHONPATH"] = os.pathsep.join([str(SRC_DIR), str(TESTS_DIR)])
+
+    return subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+
+
 def test_migrate_succeeds_with_term_model_swapped() -> None:
     """`migrate` must apply cleanly when ICV_TAXONOMY_TERM_MODEL points at a
     consuming project's own AbstractTerm subclass.
@@ -97,3 +117,55 @@ def test_makemigrations_check_reports_no_drift_with_term_model_swapped() -> None
         f"swapped (issue #21 regression):\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "No changes detected" in result.stdout
+
+
+def test_no_orphan_package_tables_when_models_are_swapped() -> None:
+    """Guard D-G2 (ADR-074): under a swap, the package's own concrete tables
+    must be ABSENT from the migrated schema.
+
+    icv_taxonomy declares `swappable` in `0001_initial` itself rather than
+    adding it to pre-existing history, so the strong form of D-G2 applies:
+    there is no migration in which the tables are created before the option
+    exists, and a correct `migrate` under a swap therefore creates neither
+    `icv_taxonomy_term` nor `icv_taxonomy_vocabulary`.
+
+    This is the property that failed for the consumer in #41. They vendored
+    these migrations through `MIGRATION_MODULES` and their copy lost the
+    `"swappable"` entry from the `CreateModel` options, so Django never
+    learned the models were swapped out and created both tables on every
+    database, including fresh ones. The tables then drifted from migration
+    state and a later release's `AlterField` failed against them.
+
+    `makemigrations --check` cannot catch this (`swappable` is not a key the
+    autodetector compares), and neither can an in-process assertion on
+    `Meta.swappable`, which reads the live model rather than migration state.
+    Only the migrated schema shows it, which is why this runs `migrate` for
+    real and then inspects the tables it produced.
+    """
+    script = (
+        "import django; django.setup();"
+        "from django.core.management import call_command;"
+        "call_command('migrate', '--noinput', verbosity=0);"
+        "from django.db import connection;"
+        "t = set(connection.introspection.table_names());"
+        "print('ORPHANS:' + ','.join(sorted("
+        "t & {'icv_taxonomy_term', 'icv_taxonomy_vocabulary'})));"
+        "print('SWAPTABLE:' + str('zappswap_appswapterm' in t))"
+    )
+    result = _run_django_command_script(script)
+
+    assert result.returncode == 0, f"probe failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+
+    # The swapped-in table must exist, otherwise the orphan assertion below
+    # would pass vacuously on a migrate that created nothing at all.
+    assert "SWAPTABLE:True" in result.stdout, (
+        f"the swapped-in table was not created, so this test proves nothing:\nstdout:\n{result.stdout}"
+    )
+
+    orphans = next(line for line in result.stdout.splitlines() if line.startswith("ORPHANS:"))[len("ORPHANS:") :]
+
+    assert orphans == "", (
+        f"migrate created orphan package tables under a swap: {orphans}. "
+        'The "swappable" option is missing from the CreateModel operations in '
+        "migration state, so Django does not know these models are swapped out."
+    )
