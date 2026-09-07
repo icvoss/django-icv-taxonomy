@@ -582,6 +582,16 @@ ICV_TAXONOMY_VOCABULARY_MODEL = "myapp.ProjectVocabulary"
 ICV_TAXONOMY_TERM_MODEL = "myapp.ProjectTerm"
 ```
 
+That is the whole integration. **Do not route this package's migrations
+through `MIGRATION_MODULES`**, and do not vendor a copy of them into your own
+tree: a swapped consumer needs no migration routing at all, because the
+package's migrations resolve the swapped models through these settings at
+migrate time. A vendored copy silently stops tracking later releases, and
+losing the `"swappable"` option from it leaves Django managing orphan
+`icv_taxonomy_term` and `icv_taxonomy_vocabulary` tables that no tool warns
+you about until a later release fails against them. See
+[UPGRADING.md](UPGRADING.md) for how to detect and unwind that state.
+
 ---
 
 ## Admin Integration

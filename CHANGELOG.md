@@ -9,6 +9,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Guards D-G2 and D-G3 (ADR-074) for the swappable seam** (#41). D-G2
+  asserts that a `migrate` under a swap creates neither
+  `icv_taxonomy_term` nor `icv_taxonomy_vocabulary`; D-G3 asserts the
+  `swappable` option is present in migration state, not just in the model
+  file's `Meta`.
+
+  The two are independent failures and neither substitutes for the other.
+  `makemigrations --check` is blind to both, because `swappable` is not a key
+  the autodetector compares, and the in-process swap keeps working either
+  way, because the model getter reads `Meta.swappable` off the live model
+  rather than off migration state. Losing the option from migration state
+  surfaces only on a consumer's real `migrate`, as orphan
+  `icv_taxonomy_term` / `icv_taxonomy_vocabulary` tables created and managed
+  even where the models are swapped out.
+
+  No behaviour change: the package's shipped migrations already carry the
+  option correctly. This is the guard that keeps them that way.
+
+### Documentation
+
+- **README and UPGRADING now state that routing this package's migrations
+  through `MIGRATION_MODULES` is not supported** (#41). A consumer using the
+  swappable models needs no migration routing at all. The new UPGRADING
+  section covers how to detect a vendored copy that has lost the
+  `"swappable"` option, and how to unwind the orphan tables it leaves behind.
+
 ## [1.1.0] - 2026-08-24
 
 

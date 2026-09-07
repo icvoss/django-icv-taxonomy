@@ -115,3 +115,75 @@ or later.
   first `migrate` previously failed with `ValueError: Related model ...
   cannot be resolved`, or `makemigrations --check` reported a spurious
   `AlterField` on `Term.parent`, both are resolved.
+
+---
+
+## If you route or vendor this package's migrations
+
+**Applies at every version, not to one upgrade hop.**
+
+Consumers using `ICV_TAXONOMY_TERM_MODEL` or
+`ICV_TAXONOMY_VOCABULARY_MODEL` need **no migration routing at all**. The
+swappable seam is designed so the package's own migrations run from the
+package, unmodified, and resolve the swapped models through the settings at
+migrate time. Let them.
+
+Pointing `MIGRATION_MODULES` at a copy of this package's migrations is not
+a supported pattern:
+
+```python
+# Not supported. The copy is yours to reconcile from here on.
+MIGRATION_MODULES = {"icv_taxonomy": "apps.taxonomy.icv_taxonomy_migrations"}
+```
+
+A vendored copy stops receiving this package's migrations at the version it
+was taken from. Every subsequent release's migrations are then yours to port
+by hand, and any divergence between the copy and the package's models is
+silent until a later release alters one of them.
+
+The specific way this bites is worth naming, because it is quiet for months.
+The `CreateModel` operations for `Term` and `Vocabulary` carry a
+`"swappable"` entry in their `options` block:
+
+```python
+options={
+    ...,
+    "swappable": "ICV_TAXONOMY_TERM_MODEL",
+},
+```
+
+If a hand-maintained copy loses that entry, Django never learns the model
+can be swapped out. It creates and keeps managing concrete
+`icv_taxonomy_term` and `icv_taxonomy_vocabulary` tables on **every**
+database, including fresh ones, even though your real data lives in your own
+swapped-in tables and these stay empty. The orphans then drift from
+migration state, and a later release that alters the model fails against
+them, typically as an incompatible-types error on a foreign key that reads
+as a bug in this package rather than in the copy.
+
+Neither `makemigrations --check` nor your test suite catches this: the
+option is not a key Django's autodetector compares, and the in-process swap
+still works, because the model getter reads `Meta.swappable` off the live
+model rather than off migration state. It surfaces only on a real `migrate`.
+
+**To check whether you are in this state**, read the option out of migration
+state rather than off the model:
+
+```python
+from django.db.migrations.loader import MigrationLoader
+
+# From migration files only. Never ProjectState.from_apps(), which reads
+# the app registry and passes even when the option is absent.
+state = MigrationLoader(None, ignore_no_migrations=True).project_state()
+print(state.models[("icv_taxonomy", "term")].options.get("swappable"))
+# Expected: "ICV_TAXONOMY_TERM_MODEL". None means the option was lost.
+```
+
+**To get back to the supported shape**, drop the `MIGRATION_MODULES` entry
+for `icv_taxonomy` so the package's own migrations apply again, then
+reconcile the two orphan tables against your own database. If they are empty
+(they will be, if the swap was in force), that reconciliation is a drop; if
+they are not, the rows in them predate the swap taking effect and are yours
+to migrate before dropping. Neither step is something this package can do
+for you, which is the reason the routing is unsupported rather than merely
+discouraged.
