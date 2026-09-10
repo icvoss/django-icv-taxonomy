@@ -346,6 +346,32 @@ class TestMaxDepthEnforcement:
         with pytest.raises(ValidationError):
             depth_2.full_clean()
 
+    def test_dangling_parent_id_raises_validation_error(self, db):
+        """A term with a non-existent parent_id raises ValidationError, not silently reinterpreted as depth 0."""
+        from icv_taxonomy.models import Term, Vocabulary
+
+        vocab = Vocabulary.objects.create(
+            name="Depth Test",
+            slug="depth-test",
+            vocabulary_type="hierarchical",
+            max_depth=10,
+        )
+        # Create a valid root term
+        root = Term(vocabulary=vocab, name="Root", slug="root-dangle")
+        root.save()
+
+        # Create a term with a dangling parent_id (non-existent pk)
+        nonexistent_pk = root.pk + 9999
+        dangling_term = Term(
+            vocabulary=vocab,
+            name="Dangling",
+            slug="dangling",
+            parent_id=nonexistent_pk,
+        )
+        # The dangling parent_id should raise ValidationError, not pass as depth=0
+        with pytest.raises(ValidationError):
+            dangling_term.full_clean()
+
 
 @pytest.mark.django_db
 class TestCrossVocabularyParentRejection:
