@@ -532,13 +532,14 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
                     # depth is set by icv-tree pre_save; for new nodes we
                     # must compute it from parent.depth + 1.
                     if self._state.adding:
-                        try:
-                            parent_depth = self.__class__.all_objects.filter(pk=self.parent_id).values_list(
-                                "depth", flat=True
-                            )[0]
-                            candidate_depth = parent_depth + 1
-                        except IndexError:
-                            candidate_depth = 0
+                        parent_qs = self.__class__.all_objects.filter(pk=self.parent_id)
+                        if not parent_qs.exists():
+                            raise ValidationError(
+                                _("Term refers to a non-existent parent (parent_id=%(parent_id)s).")
+                                % {"parent_id": self.parent_id}
+                            )
+                        parent_depth = parent_qs.values_list("depth", flat=True)[0]
+                        candidate_depth = parent_depth + 1
                     else:
                         candidate_depth = self.depth
 
