@@ -218,12 +218,11 @@ jobs:
         run: python manage.py migrate --noinput
         working-directory: tests/consumer
 
-      # Set continue-on-error to false once this package typechecks clean in a
-      # consumer (flip it in the same release that ships the typing fix, and
-      # update the advisory note in RELEASING.md). Until then it is advisory so
-      # the migrate/makemigrations legs still gate. Defaults to advisory (true)
-      # so a fresh scaffold is not blocked on a typing pass it has not done yet.
-      - name: mypy with django-stubs (package typechecks clean in a consumer)
+      # The consumer owns this config because it owns the settings module.
+      # Pointing django-stubs at the package's tests/settings.py here made the
+      # smoke check typecheck the wrong Django project and sometimes abort
+      # during plugin initialisation before it checked any consumer module.
+      - name: mypy with django-stubs against consumer settings
         continue-on-error: true
-        run: mypy .
+        run: mypy --config-file mypy.ini .
         working-directory: tests/consumer

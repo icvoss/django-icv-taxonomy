@@ -180,25 +180,17 @@ def _icv_tree_post_delete_disconnected():
 class TestFastDeleteRegainedForUnrelatedModels:
     """AC-40: a cascade-free consumer model regains Django's fast-delete path.
 
-    Article and Product in taxonomy_testapp have no incoming ForeignKey from
-    any model (TermAssociation links via GenericForeignKey, which the
-    deletion Collector does not walk), so a signal listener FROM THIS
-    PACKAGE was the only thing #40's fix controls that could block
-    can_fast_delete() for them. See _icv_tree_post_delete_disconnected()
+    Product has no incoming ForeignKey from any model (TermAssociation links
+    via GenericForeignKey, which the deletion Collector does not walk).
+    Article has a typed association test model, so Django correctly prevents
+    its fast delete. A signal listener FROM THIS PACKAGE was the only thing
+    #40's fix controls that could block can_fast_delete() for Product. See
+    _icv_tree_post_delete_disconnected()
     above for why icv_tree's own senderless post_delete receiver must be
     disconnected for these assertions to be faithful. TestHandlersNotConnectedToUnrelatedModels
     above already proves icv-taxonomy attaches no pre_delete/post_delete
     listener to Article/Product at all.
     """
-
-    def test_article_regains_fast_delete(self, db):
-        from taxonomy_testapp.models import Article
-
-        Article.objects.create(title="Fast Delete Candidate")
-
-        collector = Collector(using="default")
-        with _icv_tree_post_delete_disconnected():
-            assert collector.can_fast_delete(Article.objects.all()) is True
 
     def test_product_regains_fast_delete(self, db):
         from taxonomy_testapp.models import Product
@@ -213,25 +205,25 @@ class TestFastDeleteRegainedForUnrelatedModels:
         """Control: proves the assertions above are sensitive to a real listener,
         not vacuously true regardless of connection state.
         """
-        from taxonomy_testapp.models import Article
+        from taxonomy_testapp.models import Product
 
-        Article.objects.create(title="Control Candidate")
+        Product.objects.create(name="Control Candidate")
 
         def noop(**kwargs) -> None:
             return None
 
-        pre_delete.connect(noop, sender=Article, dispatch_uid="test.control.noop", weak=False)
+        pre_delete.connect(noop, sender=Product, dispatch_uid="test.control.noop", weak=False)
         try:
             collector = Collector(using="default")
             with _icv_tree_post_delete_disconnected():
-                assert collector.can_fast_delete(Article.objects.all()) is False
+                assert collector.can_fast_delete(Product.objects.all()) is False
         finally:
-            pre_delete.disconnect(sender=Article, dispatch_uid="test.control.noop")
+            pre_delete.disconnect(sender=Product, dispatch_uid="test.control.noop")
 
         # And it is restored once the control listener is removed.
         collector = Collector(using="default")
         with _icv_tree_post_delete_disconnected():
-            assert collector.can_fast_delete(Article.objects.all()) is True
+            assert collector.can_fast_delete(Product.objects.all()) is True
 
     def test_term_model_itself_is_not_fast_deletable(self, db, flat_vocabulary):
         """Term still carries its own pre_delete listener (by design): term_deleted

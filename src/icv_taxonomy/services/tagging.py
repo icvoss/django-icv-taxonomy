@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from ..exceptions import TaxonomyValidationError
@@ -289,8 +290,10 @@ def get_objects_for_term(
         raw_ids = list(assocs.filter(content_type=ct).values_list("object_id", flat=True))
         try:
             typed_ids = [pk_field.to_python(oid) for oid in raw_ids]
-        except Exception:  # noqa: BLE001
-            typed_ids = raw_ids
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise TaxonomyValidationError(
+                f"Stored association ID cannot be converted for {model_class._meta.label}."
+            ) from exc
         return model_class.objects.filter(pk__in=typed_ids)
 
     # Heterogeneous list — resolve GenericFK.

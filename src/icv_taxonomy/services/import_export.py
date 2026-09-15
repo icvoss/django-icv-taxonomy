@@ -170,7 +170,12 @@ def import_vocabulary(
     Returns:
         A dict with import statistics::
 
-            {"created": int, "updated": int, "skipped": int}
+            {
+                "created": int,
+                "updated": int,
+                "skipped": int,
+                "relationships_skipped": int,
+            }
 
     Raises:
         TaxonomyValidationError: If the target vocabulary is closed and new
@@ -188,6 +193,7 @@ def import_vocabulary(
     created = 0
     updated = 0
     skipped = 0
+    relationships_skipped = 0
 
     with transaction.atomic():
         Vocabulary = get_vocabulary_model()
@@ -297,11 +303,17 @@ def import_vocabulary(
             term_to = imported_terms.get(to_slug)
 
             if term_from is None or term_to is None:
+                relationships_skipped += 1
                 continue
 
             try:
                 add_relationship(term_from, term_to, rel_type)
             except TaxonomyValidationError:
-                pass
+                relationships_skipped += 1
 
-    return {"created": created, "updated": updated, "skipped": skipped}
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "relationships_skipped": relationships_skipped,
+    }

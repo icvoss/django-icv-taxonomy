@@ -307,7 +307,7 @@ class AbstractVocabulary(_BASE):  # type: ignore[valid-type,misc]
             try:
                 db_instance = self.__class__.all_objects.get(pk=self.pk)
             except self.__class__.DoesNotExist:
-                pass
+                raise ValidationError("Cannot validate a vocabulary that no longer exists (BR-TAX-002).") from None
             else:
                 if db_instance.vocabulary_type != self.vocabulary_type and self.terms.exists():
                     raise ValidationError(
@@ -479,13 +479,9 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
         # assigns a UUID default at instantiation time, making pk truthy even for
         # unsaved instances.
         if self._state.adding and self.vocabulary_id:
-            try:
-                vocab = self.vocabulary
-            except Exception:
-                pass
-            else:
-                if not vocab.is_open:
-                    raise ValidationError(_("This vocabulary is closed and does not accept new terms (BR-TAX-003)."))
+            vocab = self.vocabulary
+            if not vocab.is_open:
+                raise ValidationError(_("This vocabulary is closed and does not accept new terms (BR-TAX-003)."))
 
         # BR-TAX-010: vocabulary must not change after creation.
         # Use `not _state.adding` to correctly identify existing instances even when
@@ -494,7 +490,9 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
             try:
                 db_instance = self.__class__.all_objects.get(pk=self.pk)
             except self.__class__.DoesNotExist:
-                pass
+                raise ValidationError(
+                    {"vocabulary": _("Cannot validate a term that no longer exists (BR-TAX-010).")}
+                ) from None
             else:
                 if db_instance.vocabulary_id != self.vocabulary_id:
                     raise ValidationError(
@@ -511,48 +509,33 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
 
         # BR-TAX-008: Flat vocabulary terms must have no parent.
         if enforce_type and self.parent_id and self.vocabulary_id:
-            try:
-                vocab = self.vocabulary
-            except Exception:
-                pass
-            else:
-                if vocab.vocabulary_type == VocabularyType.FLAT:
-                    raise ValidationError(
-                        {"parent": _("Terms in a flat vocabulary must not have a parent (BR-TAX-008).")}
-                    )
+            vocab = self.vocabulary
+            if vocab.vocabulary_type == VocabularyType.FLAT:
+                raise ValidationError({"parent": _("Terms in a flat vocabulary must not have a parent (BR-TAX-008).")})
 
         # BR-TAX-009: Depth must not exceed vocabulary max_depth.
         if self.parent_id and self.vocabulary_id:
-            try:
-                vocab = self.vocabulary
-            except Exception:
-                pass
-            else:
-                if vocab.max_depth is not None:
-                    # depth is set by icv-tree pre_save; for new nodes we
-                    # must compute it from parent.depth + 1.
-                    if self._state.adding:
-                        try:
-                            parent_depth = self.__class__.all_objects.filter(pk=self.parent_id).values_list(
-                                "depth", flat=True
-                            )[0]
-                            candidate_depth = parent_depth + 1
-                        except IndexError:
-                            candidate_depth = 0
-                    else:
-                        candidate_depth = self.depth
+            vocab = self.vocabulary
+            if vocab.max_depth is not None:
+                # depth is set by icv-tree pre_save; for new nodes we must
+                # compute it from parent.depth + 1.
+                if self._state.adding:
+                    try:
+                        parent_depth = self.__class__.all_objects.values_list("depth", flat=True).get(pk=self.parent_id)
+                    except self.__class__.DoesNotExist:
+                        raise ValidationError({"parent": _("Parent term does not exist (BR-TAX-009).")}) from None
+                    candidate_depth = parent_depth + 1
+                else:
+                    candidate_depth = self.depth
 
-                    if candidate_depth > vocab.max_depth:
-                        raise ValidationError(
-                            _(
-                                "Term depth %(depth)s exceeds the vocabulary's "
-                                "maximum depth of %(max_depth)s (BR-TAX-009)."
-                            )
-                            % {
-                                "depth": candidate_depth,
-                                "max_depth": vocab.max_depth,
-                            }
-                        )
+                if candidate_depth > vocab.max_depth:
+                    raise ValidationError(
+                        _("Term depth %(depth)s exceeds the vocabulary's maximum depth of %(max_depth)s (BR-TAX-009).")
+                        % {
+                            "depth": candidate_depth,
+                            "max_depth": vocab.max_depth,
+                        }
+                    )
 
     def _resolve_slug_collision(self, base_slug: str, max_length: int) -> str:
         """Return a slug unique within this vocabulary, appending suffix if needed."""
