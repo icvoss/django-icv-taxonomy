@@ -307,9 +307,7 @@ class AbstractVocabulary(_BASE):  # type: ignore[valid-type,misc]
             try:
                 db_instance = self.__class__.all_objects.get(pk=self.pk)
             except self.__class__.DoesNotExist:
-                raise ValidationError(
-                    "Cannot validate a vocabulary that no longer exists (BR-TAX-002)."
-                ) from None
+                raise ValidationError("Cannot validate a vocabulary that no longer exists (BR-TAX-002).") from None
             else:
                 if db_instance.vocabulary_type != self.vocabulary_type and self.terms.exists():
                     raise ValidationError(
@@ -513,9 +511,7 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
         if enforce_type and self.parent_id and self.vocabulary_id:
             vocab = self.vocabulary
             if vocab.vocabulary_type == VocabularyType.FLAT:
-                raise ValidationError(
-                    {"parent": _("Terms in a flat vocabulary must not have a parent (BR-TAX-008).")}
-                )
+                raise ValidationError({"parent": _("Terms in a flat vocabulary must not have a parent (BR-TAX-008).")})
 
         # BR-TAX-009: Depth must not exceed vocabulary max_depth.
         if self.parent_id and self.vocabulary_id:
@@ -527,19 +523,14 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
                     try:
                         parent_depth = self.__class__.all_objects.values_list("depth", flat=True).get(pk=self.parent_id)
                     except self.__class__.DoesNotExist:
-                        raise ValidationError(
-                            {"parent": _("Parent term does not exist (BR-TAX-009).")}
-                        ) from None
+                        raise ValidationError({"parent": _("Parent term does not exist (BR-TAX-009).")}) from None
                     candidate_depth = parent_depth + 1
                 else:
                     candidate_depth = self.depth
 
                 if candidate_depth > vocab.max_depth:
                     raise ValidationError(
-                        _(
-                            "Term depth %(depth)s exceeds the vocabulary's "
-                            "maximum depth of %(max_depth)s (BR-TAX-009)."
-                        )
+                        _("Term depth %(depth)s exceeds the vocabulary's maximum depth of %(max_depth)s (BR-TAX-009).")
                         % {
                             "depth": candidate_depth,
                             "max_depth": vocab.max_depth,

@@ -67,9 +67,7 @@ def add_relationship(
         types).
     """
     if relationship_type not in RelationshipType.values:
-        raise TaxonomyValidationError(
-            f"Unknown relationship type '{relationship_type}' (BR-TAX-022)."
-        )
+        raise TaxonomyValidationError(f"Unknown relationship type '{relationship_type}' (BR-TAX-022).")
 
     if term_from.pk == term_to.pk:
         raise TaxonomyValidationError("A term cannot have a relationship with itself (BR-TAX-021).")

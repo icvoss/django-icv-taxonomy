@@ -20,8 +20,8 @@ class TestTermM2MFactory:
         join_model = create_term_m2m("taxonomy_testapp.Article")
 
         assert join_model._meta.abstract
-        assert join_model._meta.get_field("term").remote_field.model._meta.label == "icv_taxonomy.Term"
-        assert join_model._meta.get_field("content_object").remote_field.model._meta.label == "taxonomy_testapp.Article"
+        assert join_model._meta.get_field("term").remote_field.model == "icv_taxonomy.Term"
+        assert join_model._meta.get_field("content_object").remote_field.model == "taxonomy_testapp.Article"
         assert join_model._meta.ordering == ["order", "created_at"]
 
 
