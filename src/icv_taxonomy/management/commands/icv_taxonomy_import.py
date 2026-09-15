@@ -99,7 +99,8 @@ class Command(BaseCommand):
                 f"Import complete — "
                 f"created: {result['created']}, "
                 f"updated: {result['updated']}, "
-                f"skipped: {result['skipped']}."
+                f"skipped: {result['skipped']}, "
+                f"relationships skipped: {result['relationships_skipped']}."
             )
         )
 

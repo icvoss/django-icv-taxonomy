@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.db import models
 
-from icv_taxonomy.models import AbstractVocabulary
+from icv_taxonomy.models import AbstractVocabulary, create_term_m2m
 
 
 class Scope(models.Model):
@@ -60,3 +60,13 @@ class Product(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+ArticleTermBase = create_term_m2m(Article, related_name="typed_term_entries")
+
+
+class ArticleTerm(ArticleTermBase):
+    """Concrete typed join model used to prove generic-tag isolation."""
+
+    class Meta(ArticleTermBase.Meta):
+        app_label = "taxonomy_testapp"

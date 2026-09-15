@@ -9,6 +9,31 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-15
+
+### Fixed
+
+- Taxonomy validation no longer suppresses failed vocabulary or parent lookups.
+  A direct model validation now surfaces the lookup failure instead of skipping
+  the closed-vocabulary, flat-tree, maximum-depth, or immutable-vocabulary
+  rule. A stale instance whose backing row has been deleted now raises a
+  validation error instead of passing as if its previous value were current.
+
+- `get_objects_for_term()` now raises `TaxonomyValidationError` when a stored
+  generic association ID cannot be converted to the selected model's primary
+  key type. It no longer returns an empty-looking queryset for corrupted data.
+
+- `add_relationship()` now rejects values outside the documented relationship
+  type choices. `import_vocabulary()` reports skipped relationship rows through
+  `relationships_skipped`, including unresolved references and refused rows;
+  the import command prints that count.
+
+### Documentation
+
+- README requirements now state the supported Django 5.2 floor. The base-model
+  guidance names the bundled standalone default and explains the explicit
+  `ICV_BASE_MODEL` / `ICV_TAXONOMY_BASE_MODEL` settings seam.
+
 ## [1.2.0] - 2026-09-07
 
 ### Fixed

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..exceptions import TaxonomyValidationError
+from ..models import RelationshipType
 
 # Relationship types that require a reciprocal record (BR-TAX-020).
 _BIDIRECTIONAL_TYPES = frozenset({"synonym", "related"})
@@ -65,6 +66,11 @@ def add_relationship(
         Inserts one or two TermRelationship rows (reciprocal for bidirectional
         types).
     """
+    if relationship_type not in RelationshipType.values:
+        raise TaxonomyValidationError(
+            f"Unknown relationship type '{relationship_type}' (BR-TAX-022)."
+        )
+
     if term_from.pk == term_to.pk:
         raise TaxonomyValidationError("A term cannot have a relationship with itself (BR-TAX-021).")
 

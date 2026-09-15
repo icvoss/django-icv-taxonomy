@@ -69,7 +69,7 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 ### Developer Experience
 
 - Swappable `Vocabulary` and `Term` models (`ICV_TAXONOMY_VOCABULARY_MODEL` / `ICV_TAXONOMY_TERM_MODEL`)
-- Optional integration with `django-icv-core` (`BaseModel`: UUID PK, timestamps)
+- Configurable model base through `ICV_TAXONOMY_BASE_MODEL` or `ICV_BASE_MODEL`
 - System checks validate settings at startup
 - Django signals for every lifecycle event: vocabulary, term, and tagging
 
@@ -78,13 +78,21 @@ django-icv-taxonomy provides a single, shared layer. One `Vocabulary` represents
 ## Requirements
 
 - Python 3.11+
-- Django 5.1+
+- Django 5.2+
 - [django-icv-tree](https://github.com/icvoss/django-icv-tree) >= 1.0.0
 - `django.contrib.contenttypes` (for generic tagging)
 
-Optional:
+`django-icv-taxonomy` ships its own standalone `_compat.BaseModel`, which
+provides the default UUID primary key and `created_at`/`updated_at` timestamps.
+`django-icv-core` is optional. A stack consumer that uses its base sets one of
+the following settings explicitly; installing django-icv-core alone does not
+change a taxonomy model's base:
 
-- [django-icv-core](https://github.com/icvoss/django-icv-core): adds UUID primary keys and `created_at`/`updated_at` timestamps to vocabulary and term models
+```python
+ICV_BASE_MODEL = "icv_core.models.BaseModel"
+# or, for this package only:
+ICV_TAXONOMY_BASE_MODEL = "myapp.models.TaxonomyBase"
+```
 
 ---
 
@@ -535,7 +543,7 @@ All public functions are importable from `icv_taxonomy.services`.
 | Function | Description |
 |----------|-------------|
 | `export_vocabulary(vocabulary, include_inactive=False)` | Serialise vocabulary and terms to a JSON-serialisable dict. |
-| `import_vocabulary(data, vocabulary=None)` | Import from dict. Idempotent by slug. Returns `{"created", "updated", "skipped"}`. |
+| `import_vocabulary(data, vocabulary=None)` | Import from dict. Idempotent by slug. Returns created, updated, skipped-term, and skipped-relationship counts. |
 
 ---
 
@@ -545,6 +553,8 @@ All public functions are importable from `icv_taxonomy.services`.
 |---------|---------|-------------|
 | `ICV_TAXONOMY_VOCABULARY_MODEL` | `"icv_taxonomy.Vocabulary"` | Swappable vocabulary model. Dotted `app_label.ModelName`. |
 | `ICV_TAXONOMY_TERM_MODEL` | `"icv_taxonomy.Term"` | Swappable term model. Dotted `app_label.ModelName`. |
+| `ICV_TAXONOMY_BASE_MODEL` | `ICV_BASE_MODEL`, then `"icv_taxonomy._compat.BaseModel"` | Abstract base for taxonomy models. Use a dotted import path. |
+| `ICV_BASE_MODEL` | `"icv_taxonomy._compat.BaseModel"` | Stack-wide fallback abstract model base, used when `ICV_TAXONOMY_BASE_MODEL` is unset. |
 | `ICV_TAXONOMY_AUTO_SLUG` | `True` | Auto-generate slug from name when blank on save. |
 | `ICV_TAXONOMY_SLUG_MAX_LENGTH` | `255` | Maximum length for auto-generated slugs. |
 | `ICV_TAXONOMY_CASE_SENSITIVE_SLUGS` | `False` | When False, slugs are lowercased on save. |
