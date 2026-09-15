@@ -29,9 +29,9 @@ class TestTermM2MFactory:
 class TestTypedM2MIsolation:
     def test_generic_and_typed_tagging_use_separate_join_tables(self, article):
         from django.apps import apps
+        from taxonomy_testapp.models import ArticleTerm
 
         from icv_taxonomy.services import create_term, create_vocabulary, tag_object
-        from taxonomy_testapp.models import ArticleTerm
 
         vocabulary = create_vocabulary(name="Topics")
         term = create_term(vocabulary=vocabulary, name="Django")
