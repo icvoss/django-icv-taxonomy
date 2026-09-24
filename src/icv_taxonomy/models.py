@@ -509,7 +509,9 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
             try:
                 parent_row = self.__class__.all_objects.values("vocabulary_id", "depth").get(pk=self.parent_id)
             except self.__class__.DoesNotExist:
-                raise ValidationError({"parent": _("Parent term does not exist (BR-TAX-014).")}) from None
+                # Same string 1.3.0 shipped for this condition under BR-TAX-009 (#62):
+                # one condition, one message; the lookup is shared by both checks.
+                raise ValidationError({"parent": _("Parent term does not exist (BR-TAX-009).")}) from None
             if parent_row["vocabulary_id"] != self.vocabulary_id:
                 raise ValidationError({"parent": _("Parent term must belong to the same vocabulary (BR-TAX-014).")})
 
