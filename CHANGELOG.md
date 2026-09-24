@@ -9,6 +9,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- `Term.clean()`'s BR-TAX-014 same-vocabulary check no longer treats a
+  `parent_id` that resolves to no row as "nothing to compare". It now raises
+  `ValidationError` on the `parent` key naming BR-TAX-014, the same way the
+  BR-TAX-009 depth check already does, sharing one parent-row lookup between
+  the two checks (icvoss/django-icv-taxonomy#61).
+
 ## [1.3.0] - 2026-09-15
 
 ### Fixed

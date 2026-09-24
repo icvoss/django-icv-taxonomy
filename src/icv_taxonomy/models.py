@@ -500,11 +500,17 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
                     )
 
         # BR-TAX-014: Parent must belong to same vocabulary.
+        # A dangling parent_id (no matching row) is a validation failure, not
+        # a reason to skip the check, so the lookup is a get() guarded by
+        # DoesNotExist rather than a filter().first() that would return None
+        # for both "no parent" and "parent row missing".
+        parent_row = None
         if self.parent_id and self.vocabulary_id:
-            parent_vocab_id = (
-                self.__class__.all_objects.filter(pk=self.parent_id).values_list("vocabulary_id", flat=True).first()
-            )
-            if parent_vocab_id is not None and parent_vocab_id != self.vocabulary_id:
+            try:
+                parent_row = self.__class__.all_objects.values("vocabulary_id", "depth").get(pk=self.parent_id)
+            except self.__class__.DoesNotExist:
+                raise ValidationError({"parent": _("Parent term does not exist (BR-TAX-014).")}) from None
+            if parent_row["vocabulary_id"] != self.vocabulary_id:
                 raise ValidationError({"parent": _("Parent term must belong to the same vocabulary (BR-TAX-014).")})
 
         # BR-TAX-008: Flat vocabulary terms must have no parent.
@@ -518,12 +524,11 @@ class AbstractTerm(TreeNode, _BASE):  # type: ignore[valid-type,misc]
             vocab = self.vocabulary
             if vocab.max_depth is not None:
                 # depth is set by icv-tree pre_save; for new nodes we must
-                # compute it from parent.depth + 1.
+                # compute it from parent.depth + 1. The BR-TAX-014 check above
+                # already resolved the parent row (and raised if it does not
+                # exist), so reuse it instead of a second query.
                 if self._state.adding:
-                    try:
-                        parent_depth = self.__class__.all_objects.values_list("depth", flat=True).get(pk=self.parent_id)
-                    except self.__class__.DoesNotExist:
-                        raise ValidationError({"parent": _("Parent term does not exist (BR-TAX-009).")}) from None
+                    parent_depth = parent_row["depth"]
                     candidate_depth = parent_depth + 1
                 else:
                     candidate_depth = self.depth
