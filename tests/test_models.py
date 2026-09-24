@@ -364,6 +364,37 @@ class TestCrossVocabularyParentRejection:
         with pytest.raises(ValidationError):
             term.full_clean()
 
+    def test_same_vocabulary_parent_passes_clean(self, db):
+        """A term with a real parent in the same vocabulary passes clean()."""
+        from icv_taxonomy.models import Term, Vocabulary
+
+        vocab = Vocabulary.objects.create(name="Vocab Z", slug="vocab-z", vocabulary_type="hierarchical")
+        root = Term(vocabulary=vocab, name="Root", slug="root-z")
+        root.save()
+
+        term = Term(vocabulary=vocab, name="Child", slug="child-z", parent=root)
+        term.clean()
+
+    def test_dangling_parent_id_raises_from_clean(self, db):
+        """clean() raises ValidationError on the `parent` key for a parent_id
+
+        that resolves to no row, rather than silently skipping the
+        same-vocabulary check (icvoss/django-icv-taxonomy#61). Calls clean()
+        directly: full_clean() already rejects a dangling parent_id through
+        Django's own FK validation, before BR-TAX-014 ever runs.
+        """
+        import uuid
+
+        from icv_taxonomy.models import Term, Vocabulary
+
+        vocab = Vocabulary.objects.create(name="Vocab W", slug="vocab-w", vocabulary_type="hierarchical")
+        term = Term(vocabulary=vocab, name="Orphan", slug="orphan-w")
+        term.parent_id = uuid.uuid4()
+
+        with pytest.raises(ValidationError) as exc_info:
+            term.clean()
+        assert "parent" in exc_info.value.message_dict
+
 
 @pytest.mark.django_db
 class TestClosedVocabularyRejectsNewTerms:
