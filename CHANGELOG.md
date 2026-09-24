@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-24
+
 ### Fixed
 
 - `Term.clean()`'s BR-TAX-014 same-vocabulary check no longer treats a
